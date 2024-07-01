@@ -60,6 +60,7 @@ extern char** environ;
 #include "assert.h"
 #include "config.h"
 #include "version.h"
+#include "threadpool.h"
 
 extern SIPpSocket *ctrl_socket;
 extern SIPpSocket *stdin_socket;
@@ -605,14 +606,231 @@ static void traffic_thread(int &rtp_errors, int &echo_errors)
     assert(0);
 }
 
+#define SIP_SERVER
+//#undef SIP_SERVER
+
+// RTCP 报告包头部结构
+struct RTCPVideoHeader {
+    uint8_t version_padding_sourceCount;
+    uint8_t packetType;
+    uint16_t length;
+    uint32_t SSRC;
+};
+
+// RTCP 报告包数据结构
+struct RTCPVideoMC {
+    RTCPVideoHeader header;
+    std::vector<uint8_t> reportData;
+};
+
+static int sendRtcpVidoeMc(RTCPVideoMC *rtcpVideo, int sock, sockaddr_storage remote_rtcp_addr)
+{
+
+    // 将报告包数据放入缓冲区
+    char buffer[BUFFER_SIZE];
+    memcpy(buffer, &rtcpVideo->header, sizeof(RTCPVideoHeader));
+    memcpy(buffer + sizeof(RTCPVideoHeader), rtcpVideo->reportData.data(), rtcpVideo->reportData.size());
+    // 发送 RTCP 报告包
+    size_t sent = 0;
+    size_t totalLength = sizeof(RTCPVideoHeader) + rtcpVideo->reportData.size();
+    while (sent < totalLength) {
+        size_t n = sendto(sock, buffer + sent, totalLength - sent, 0, (struct sockaddr*)&remote_rtcp_addr, sizeof(remote_rtcp_addr));
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // 发送缓冲区已满,稍后重试
+                continue;
+            } else {
+                std::cerr << "Failed to send RTCP report" << std::endl;
+                close(sock);
+                return 1;
+            }
+        } else if (n == 0) {
+            // 连接关闭
+            close(sock);
+            return 0;
+        } else {
+            sent += n;
+        }
+    }
+
+    if (sent >= totalLength) {
+        std::cout << "RTCP report sent successfully" << std::endl;
+    }
+
+    close(sock);
+    return 0;
+}
+ 
+
+static int recvRtcpVidoeMc(int sock)
+{
+    // 接收 RTCP 报告包
+    struct sockaddr_storage remote_addr_storage;
+    socklen_t remote_addr_len = sizeof(remote_addr_storage);
+    char buffer[BUFFER_SIZE];
+    size_t received = 0;
+
+    // 循环接收 RTCP 报告包数据,直到完全接收到头部
+    while (received < 8) {
+        size_t n = recvfrom(sock, buffer + received, 8 - received, 0, (struct sockaddr*)&remote_addr_storage, &remote_addr_len);
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // 没有完全接收到数据,继续等待
+                continue;
+            } else {
+                std::cerr << "Failed to receive RTCP report header" << std::endl;
+                close(sock);
+                return 1;
+            }
+        } else if (n == 0) {
+            // 连接关闭
+            close(sock);
+            return 0;
+        } else {
+            received += n;
+        }
+    }
+
+    // 解析 RTCP 报告包头部信息
+    RTCPVideoHeader* header = (RTCPVideoHeader*)buffer;
+    uint16_t length = ntohs(header->length);
+    size_t totalLength = (length + 1) * 4;  // 报告包总长度
+
+    // 分配缓冲区并接收剩余数据
+    buffer[0] = 0;  // 清空前 8 个字节
+    while (received < totalLength) {
+        size_t n = recvfrom(sock, buffer + received, totalLength - received, 0, (struct sockaddr*)&remote_addr_storage, &remote_addr_len);
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // 没有完全接收到数据,继续等待
+                continue;
+            } else {
+                std::cerr << "Failed to receive RTCP report data" << std::endl;
+                close(sock);
+                return 1;
+            }
+        } else if (n == 0) {
+            // 连接关闭
+            close(sock);
+            return 0;
+        } else {
+            received += n;
+        }
+    }
+
+    if (received >= totalLength) {
+        std::cout << "RTCP report received successfully" << std::endl;
+        RTCPVideoMC* receivedReport = (RTCPVideoMC*)buffer;
+        std::cout << "SSRC: " << ntohl(receivedReport->header.SSRC) << std::endl;
+        // 处理其他 RTCP 报告包字段
+    }
+
+    close(sock);
+    return 0;
+}
+
+
+static void rtcp_thread(void* param)
+{
+    LOG_INFO(" remote_ip is  "<< remote_ip <<" ") ;
+
+    ThreadPool pool(4);
+    std::vector<std::future<void>> futures;
+
+    // 创建并提交一些任务
+    for (int i = 0; i < 8; ++i) {
+        futures.push_back(pool.enqueue(std::make_shared<ExampleTask>(i)));
+    }
+
+    // 等待所有任务完成
+    for (auto& future : futures) {
+        future.get();
+    }
+
+
+    int sock = *(int *)param;
+    //sipp_socklen_t len;
+    struct sockaddr_storage remote_rtcp_addr;
+
+    struct sockaddr_in remote_addr;
+    memset(&remote_addr, 0, sizeof(remote_addr));
+    remote_addr.sin_family = AF_INET;
+    remote_addr.sin_addr.s_addr = inet_addr(remote_ip);
+    remote_addr.sin_port = htons(media_port + 10);
+
+    // 将 sockaddr_in 转换为 sockaddr_storage
+    memcpy(&remote_rtcp_addr, &remote_addr, sizeof(remote_addr));
+
+    //len = sizeof(remote_rtcp_addr);
+
+
+
+    int                   rc;
+    sigset_t              mask;
+    sigfillset(&mask); /* Mask all allowed signals */
+    rc = pthread_sigmask(SIG_BLOCK, &mask, nullptr);
+    if (rc) {
+        WARNING("pthread_sigmask returned %d", rc);
+        return;
+    }
+    // timeout after 100ms, to enable graceful termination of the thread
+    struct timeval tv = {0, 100000};
+    if ((setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) ||
+        (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0)) {
+        WARNING("Cannot set socket timeout. error: %d", errno);
+    }
+
+    //判断当前程序是服务端还是客户端，
+#ifdef SIP_SERVER
+       // 构建 RTCP 报告包
+    // 启动后3秒发送rtcp通知， 目前使用172.16.10.148的第一个视频通知和第二个视频通知
+    std::this_thread::sleep_for(std::chrono::milliseconds(3000)); 
+    RTCPVideoMC report;
+    report.header.version_padding_sourceCount = 0x86;
+    report.header.packetType =  0xcc;
+    report.header.SSRC = htonl(0x00000000);
+
+   // 添加报告包数据
+    std::vector<uint8_t> reportData = {
+        0x4d, 0x43, 0x56, 0x31, 0x06, 0x34, 0x73, 0x69, 0x70, 0x3a, 0x31, 0x34, 0x38, 0x38, 0x39, 0x31,
+        0x39, 0x39, 0x30, 0x33, 0x32, 0x40, 0x74, 0x6b, 0x2e, 0x6d, 0x63, 0x78, 0x2e, 0x6d, 0x6e, 0x63,
+        0x30, 0x32, 0x30, 0x2e, 0x6d, 0x63, 0x63, 0x34, 0x36, 0x30, 0x2e, 0x33, 0x67, 0x70, 0x70, 0x6e,
+        0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x2e, 0x6f, 0x72, 0x67, 0x00, 0x00, 0x0e, 0x06, 0x0f, 0x3e,
+        0x00, 0x99, 0x00, 0x00
+    };
+
+    report.reportData = reportData;
+    report.header.length = htons((sizeof(RTCPVideoHeader) + report.reportData.size()) / 4 - 1);
+    //
+    sendRtcpVidoeMc(&report, sock, remote_rtcp_addr);
+    //  const char* message = "Hello, remote host!";
+    //  size_t ns = sendto(sock, message , strlen(message), 0,
+    //                  (sockaddr*)&remote_rtcp_addr, len);
+    // if (ns != strlen(message)) {
+    //     std::cerr << "Failed to send data" << std::endl;
+    // } else {
+    //     std::cout << "Data sent successfully" << std::endl;
+    // }
+#else
+    recvRtcpVidoeMc(sock);
+
+#endif
+    recvRtcpVidoeMc(sock);
+
+
+    close(sock);
+ 
+}
+
 /*************** RTP ECHO THREAD ***********************/
 /* param is a pointer to RTP socket */
 
 static void rtp_echo_thread(void* param)
 {
+    LOG_INFO( " rtp_echo_thread  start 1111111111 "<<" ") ;
     std::vector<char> msg;
     msg.resize(media_bufsize);
-    ssize_t nr, ns;
+    ssize_t nr; //ns;
     sipp_socklen_t len;
     struct sockaddr_storage remote_rtp_addr;
     int sock = *(int *)param;
@@ -650,23 +868,23 @@ static void rtp_echo_thread(void* param)
         if (!rtp_echo_state) {
             continue;
         }
-        ns = sendto(sock, msg.data(), nr, 0,
-                    (sockaddr*)&remote_rtp_addr, len);
+        // ns = sendto(sock, msg.data(), nr, 0,
+        //             (sockaddr*)&remote_rtp_addr, len);
 
-        if (ns != nr) {
-            WARNING("%s %i",
-                    "Error on RTP echo transmission - stopping echo - errno=",
-                    errno);
-            return;
-        }
+        // if (ns != nr) {
+        //     WARNING("%s %i",
+        //             "Error on RTP echo transmission - stopping echo - errno=",
+        //             errno);
+        //     return;
+        // }
 
         if (*(int*)param == media_socket_audio) {
             rtp_pckts++;
-            rtp_bytes += ns;
+            rtp_bytes += nr;
         } else {
             /* packets on the second RTP stream */
             rtp2_pckts++;
-            rtp2_bytes += ns;
+            rtp2_bytes += nr;
         }
     }
 }
@@ -1315,6 +1533,9 @@ static void setup_media_sockets()
     media_socket_audio = -1;
     media_socket_video = -1;
 
+
+   
+
     if (rtp_echo_enabled) {
         for (try_counter = 1; try_counter <= max_tries; try_counter++) {
             const bool last_attempt = (
@@ -1332,6 +1553,16 @@ static void setup_media_sockets()
             media_port += 2;
         }
     }
+
+    const bool last_attempt = (
+                try_counter == max_tries || media_port >= (max_rtp_port - 2));
+    media_socket_rtcp = create_socket(&media_sockaddr, media_port + 10, last_attempt, "rtcp");
+    if (media_socket_rtcp == -1) {
+        ::close(media_socket_rtcp);
+        media_socket_rtcp = -1;
+        ERROR("create rtcp address '%s'.\n"
+              " failed ", media_ip);
+    }
 }
 
 /* Main */
@@ -1339,6 +1570,7 @@ int main(int argc, char *argv[])
 {
     int                  argi = 0;
     pthread_t pthread2_id = 0, pthread3_id = 0;
+    pthread_t pthread_rtcp_id = 0;
     bool                 slave_masterSet = false;
     int rtp_errors;
     int echo_errors;
@@ -2162,6 +2394,11 @@ int main(int argc, char *argv[])
             ERROR_NO("Unable to create video RTP echo thread");
         }
     }
+    if (pthread_create(&pthread_rtcp_id, nullptr,
+                (void *(*)(void *))rtcp_thread, &media_socket_rtcp) == -1) {
+            ERROR_NO("Unable to create RTP echo thread");
+        }
+    
 
     traffic_thread(rtp_errors, echo_errors);
 
@@ -2172,6 +2409,10 @@ int main(int argc, char *argv[])
     }
     if (pthread3_id) {
         pthread_join(pthread3_id, nullptr);
+    }
+    if (pthread_rtcp_id)
+    {
+         pthread_join(pthread_rtcp_id, nullptr);
     }
 
 #ifdef HAVE_EPOLL

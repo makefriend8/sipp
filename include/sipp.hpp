@@ -420,6 +420,7 @@ MAYBE_EXTERN SIPpSocket   *main_remote_socket           DEFVAL(nullptr);
 MAYBE_EXTERN SIPpSocket   *tcp_multiplex                DEFVAL(nullptr);
 MAYBE_EXTERN int media_socket_audio                     DEFVAL(0);
 MAYBE_EXTERN int media_socket_video                     DEFVAL(0);
+MAYBE_EXTERN int media_socket_rtcp                     DEFVAL(0);
 
 MAYBE_EXTERN struct sockaddr_storage local_sockaddr;
 MAYBE_EXTERN struct sockaddr_storage localTwin_sockaddr;

@@ -1840,6 +1840,7 @@ bool call::next()
 
 bool call::executeMessage(message *curmsg)
 {
+    LOG_INFO("start");
     T_ActionResult actionResult = E_AR_NO_ERROR;
 
     if (curmsg->pause_distribution || curmsg->pause_variable != -1) {
@@ -2105,6 +2106,7 @@ bool call::run()
         delete this;
         return false;
     }
+    //outf<<"   " <<" "<<__FUNCTION__ <<" "<<__LINE__ <<std::endl ;
 
     update_clock_tick();
 
@@ -2120,6 +2122,8 @@ bool call::run()
         }
         curmsg = call_scenario->messages[msg_index];
     }
+
+    LOG_INFO("Processing message  "<< msg_index << " of type "<< curmsg->M_type<<  " for call "<< id << " at " << clock_tick  <<_sessionStateCurrent <<" ");
 
     callDebug("Processing message %d of type %d for call %s at %lu.\n", msg_index, curmsg->M_type, id, clock_tick);
 
@@ -4112,6 +4116,7 @@ char* call::createSendingMessage(SendingMessage *src, int P_index, char *msg_buf
     if (body &&
         !strcmp(get_header_content(msg_buffer, (char*)"Content-Type:"), "application/sdp"))
     {
+        LOG_INFO( " create sdp session stat is "<< getSessionStateCurrent() <<" ");
         if (getSessionStateCurrent() == eNoSession)
         {
 #ifdef USE_TLS
@@ -4488,7 +4493,7 @@ bool call::process_incoming(const char* msg, const struct sockaddr_storage* src)
     bool            found = false;
     T_ActionResult  actionResult;
     unsigned long int invite_cseq = 0;
-
+    LOG_INFO(" start msg is ******start ***** "<<msg<<" "<< " ********************************* end **********" );
     update_clock_tick();
     callDebug("Processing %zu byte incoming message for call-ID %s (hash %lu):\n%s\n\n",
               strlen(msg), id, hash(msg), msg);
@@ -4585,6 +4590,7 @@ bool call::process_incoming(const char* msg, const struct sockaddr_storage* src)
           (hasMedia == 1) &&
           (!curmsg->ignoresdp))
     {
+        LOG_INFO( " has sdp session stat is "<< getSessionStateCurrent() <<" ");
         const char* ptr = 0;
         int ip_ver = 0;
         int audio_port = 0;

@@ -47,6 +47,8 @@
 
 unsigned long total_errors = 0;
 
+std::ofstream outf("sipp_mdy_log.txt");
+
 void log_off(struct logfile_info* lfi)
 {
     if (lfi->fptr) {

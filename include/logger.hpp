@@ -4,6 +4,7 @@
 /************************** Trace Files ***********************/
 
 #include <time.h>
+#include <fstream>
 #include "sipp.hpp"
 
 #ifdef GLOBALS_FULL_DEFINITION
@@ -13,6 +14,12 @@
 #define MAYBE_EXTERN extern
 #define DEFVAL(value)
 #endif
+
+extern std::ofstream outf;
+
+#define __FILENAME__ (strrchr(__FILE__, '\\') ? strrchr(__FILE__, '\\') + 1 : __FILE__)
+
+#define LOG_INFO(str) {outf  <<"|"<<__FILENAME__<<"|"<<__LINE__<<"|"<< str <<"|"<<__FUNCTION__ <<std::endl;;}
 
 MAYBE_EXTERN FILE * screenf             DEFVAL(0);
 MAYBE_EXTERN FILE * countf              DEFVAL(0);

@@ -141,6 +141,10 @@ void send_packets_pcap_cleanup(void* arg)
 
 void send_packets(play_args_t* play_args)
 {
+    FILE *fp;
+    fp = fopen("mytestcout.txt", "w"); // "w" 模式表示写入文件
+    fprintf(fp, "This is send_packets.\n");
+
     pthread_cleanup_push(send_packets_pcap_cleanup, ((void*)play_args));
 
     int ret = 0, sock, port_diff;
@@ -159,6 +163,7 @@ void send_packets(play_args_t* play_args)
     char buffer[PCAP_MAXPACKET];
     int temp_sum;
     socklen_t len;
+    char ipstr[INET6_ADDRSTRLEN];
 
 #ifndef MSG_DONTWAIT
     int fd_flags;
@@ -202,6 +207,11 @@ void send_packets(play_args_t* play_args)
         ERROR("Can't bind media raw socket: %s", strerror(errno));
         goto pop2;
     }
+
+   // struct sockaddr_in *addr4 = (struct sockaddr_in *)&bind_addr;
+   // char ip[INET_ADDRSTRLEN];
+   // inet_ntop(AF_INET, &addr4->sin_addr, ip, sizeof(ip));
+  //  fprintf("Bound to IP: %s, Port: %d\n", ip, ntohs(addr4->sin_port));
 
 #ifndef MSG_DONTWAIT
     fd_flags = fcntl(sock, F_GETFL , NULL);
@@ -255,6 +265,14 @@ void send_packets(play_args_t* play_args)
 
         do_sleep ((struct timeval *) &pkt_index->ts, &last, &didsleep,
                   &start);
+      // Print source and destination ports before sending
+        if (!media_ip_is_ipv6) {
+            inet_ntop(AF_INET, &(((struct sockaddr_in *)to)->sin_addr), ipstr, sizeof(ipstr));
+            fprintf(fp, "Sending packet: src port %d, dst port %d, dst IP %s\n", ntohs(udp->uh_sport), ntohs(udp->uh_dport), ipstr);
+        } else {
+            inet_ntop(AF_INET6, &(((struct sockaddr_in6 *)to)->sin6_addr), ipstr, sizeof(ipstr));
+            fprintf(fp, "Sending packet: src port %d, dst port %d, dst IP %s\n", ntohs(udp->uh_sport), ntohs(udp->uh_dport), ipstr);
+        }
 #ifdef MSG_DONTWAIT
         if (!media_ip_is_ipv6) {
             ret = sendto(sock, buffer, pkt_index->pktlen, MSG_DONTWAIT,
@@ -288,6 +306,8 @@ pop1:
     pthread_cleanup_pop(1);
 pop2:
     pthread_cleanup_pop(1);
+
+    fclose(fp);
 }
 
 /*
