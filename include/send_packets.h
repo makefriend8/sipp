@@ -128,6 +128,8 @@ extern "C"
     int parse_dtmf_play_args(const char*, pcap_pkts*, uint16_t start_seq_no);
     void free_pcaps(pcap_pkts* pkts);
     void send_packets(play_args_t*);
+    void send_h264_packets(play_args_t* play_args, int sock);
+    int init_h264_socket(play_args_t *play_args);
 #ifdef __cplusplus
 }
 #endif

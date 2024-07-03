@@ -49,3 +49,16 @@ public:
 private:
     int id;
 };
+
+class SendH264Task : public Task {
+public:
+    SendH264Task(std::string  filePath, int sock) : m_filePath(filePath), m_video_sock(sock)  {}
+     void run() override ;
+     //{
+    //     //std::cout << "Task " << id << " is running." << std::endl;
+    //     std::this_thread::sleep_for(std::chrono::milliseconds(500)); // 模拟任务执行时间
+    // }
+private:
+    std::string m_filePath;
+    int m_video_sock ;
+};

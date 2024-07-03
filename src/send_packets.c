@@ -139,6 +139,126 @@ void send_packets_pcap_cleanup(void* arg)
     }
 }
 
+int init_h264_socket(play_args_t *play_args)
+{
+    int sock;
+    uint16_t *from_port, *to_port;
+    socklen_t len;
+    int fd_flags;
+    struct sockaddr_storage bind_addr = {0};
+    struct sockaddr_storage *to = &(play_args->to);
+    struct sockaddr_storage *from = &(play_args->from);
+    sock = socket(PF_INET, SOCK_RAW, IPPROTO_UDP);
+    from_port = &(((struct sockaddr_in *)from)->sin_port);
+    len = sizeof(struct sockaddr_in);
+    to_port = &(((struct sockaddr_in *)to)->sin_port);
+    if (sock < 0)
+    {
+        ERROR("Can't create raw IPv4 socket (need to run as root?): %s", strerror(errno));
+        return -1;
+    }
+
+    memcpy(&bind_addr, from, sizeof(struct sockaddr_in));
+    ((struct sockaddr_in *)&bind_addr)->sin_port = 0;
+    if ((bind(sock, (struct sockaddr *)&bind_addr, len) != 0))
+    {
+        ERROR("Can't bind media raw socket: %s", strerror(errno));
+        return -1;
+    }
+     fd_flags = fcntl(sock, F_GETFL , NULL);
+     fd_flags |= O_NONBLOCK;
+     fcntl(sock, F_SETFL , fd_flags);
+    return sock;
+}
+
+void send_h264_packets(play_args_t* play_args, int sock)
+{
+    pthread_cleanup_push(send_packets_pcap_cleanup, ((void*)play_args));
+
+    int ret = 0, port_diff;
+    pcap_pkt *pkt_index, *pkt_max;
+    uint16_t *from_port, *to_port;
+    struct sockaddr_storage *to = &(play_args->to);
+    struct sockaddr_storage *from = &(play_args->from);
+    struct timeval didsleep = { 0, 0 };
+    struct timeval start = { 0, 0 };
+    struct timeval last = { 0, 0 };
+    pcap_pkts *pkts = play_args->pcap;
+    struct udphdr *udp;
+    char buffer[PCAP_MAXPACKET];
+    int temp_sum;
+    char ipstr[INET6_ADDRSTRLEN];
+
+    udp = (struct udphdr *)buffer;
+
+    pkt_index = pkts->pkts;
+    pkt_max = pkts->max;
+
+    /* Ensure the sender socket is closed when the thread exits - this
+     * allows the thread to be cancelled cleanly.
+     */
+    pthread_cleanup_push(send_packets_cleanup, ((void *) &sock));
+
+    while (pkt_index < pkt_max) {
+        memcpy(udp, pkt_index->data, pkt_index->pktlen);
+        port_diff = ntohs(udp->uh_dport) - pkts->base;
+        /* modify UDP ports */
+        udp->uh_sport = htons(port_diff + ntohs(*from_port));
+        udp->uh_dport = htons(port_diff + ntohs(*to_port));
+
+        if (!media_ip_is_ipv6) {
+            temp_sum = checksum_carry(
+                    pkt_index->partial_check +
+                    check((uint16_t *) &(((struct sockaddr_in *)(void *) from)->sin_addr.s_addr), 4) +
+                    check((uint16_t *) &(((struct sockaddr_in *)(void *) to)->sin_addr.s_addr), 4) +
+                    check((uint16_t *) &udp->uh_sport, 4));
+        } 
+#if !defined(_HPUX_LI) && defined(__HPUX)
+        udp->uh_sum = (temp_sum>>16)+((temp_sum & 0xffff)<<16);
+#else
+        udp->uh_sum = temp_sum;
+#endif
+
+        do_sleep ((struct timeval *) &pkt_index->ts, &last, &didsleep,
+                  &start);
+      // Print source and destination ports before sending
+        if (!media_ip_is_ipv6) {
+            inet_ntop(AF_INET, &(((struct sockaddr_in *)to)->sin_addr), ipstr, sizeof(ipstr));
+        } else {
+            inet_ntop(AF_INET6, &(((struct sockaddr_in6 *)to)->sin6_addr), ipstr, sizeof(ipstr));
+        }
+#ifdef MSG_DONTWAIT
+        if (!media_ip_is_ipv6) {
+            ret = sendto(sock, buffer, pkt_index->pktlen, MSG_DONTWAIT,
+                         (struct sockaddr *)to, sizeof(struct sockaddr_in));
+        } 
+#else
+        if (!media_ip_is_ipv6) {
+            ret = sendto(sock, buffer, pkt_index->pktlen, 0,
+                         (struct sockaddr *)to, sizeof(struct sockaddr_in));
+        } else {
+            ret = sendto(sock, buffer, pkt_index->pktlen, 0,
+                         (struct sockaddr *)&to6, sizeof(struct sockaddr_in6));
+        }
+#endif
+        if (ret < 0) {
+            WARNING("send_packets.c: sendto failed with error: %s", strerror(errno));
+            goto pop1;
+        }
+
+        rtp_pckts_pcap++;
+        rtp_bytes_pcap += pkt_index->pktlen - sizeof(*udp);
+        memcpy (&last, &(pkt_index->ts), sizeof(struct timeval));
+        pkt_index++;
+    }
+
+    /* Closing the socket is handled by pthread_cleanup_push()/pthread_cleanup_pop() */
+pop1:
+    pthread_cleanup_pop(1);
+pop2:
+    pthread_cleanup_pop(1);
+}
+
 void send_packets(play_args_t* play_args)
 {
     FILE *fp;
