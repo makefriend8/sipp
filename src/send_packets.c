@@ -148,21 +148,27 @@ int init_h264_socket(play_args_t *play_args)
     struct sockaddr_storage bind_addr = {0};
     struct sockaddr_storage *to = &(play_args->to);
     struct sockaddr_storage *from = &(play_args->from);
-    sock = socket(PF_INET, SOCK_RAW, IPPROTO_UDP);
+    struct sockaddr_in* from2 = (struct sockaddr_in*) &(play_args->from);
+
+    from2->sin_family = AF_INET;
+    from2->sin_addr.s_addr = inet_addr("172.16.154.33");
+   
     from_port = &(((struct sockaddr_in *)from)->sin_port);
     len = sizeof(struct sockaddr_in);
     to_port = &(((struct sockaddr_in *)to)->sin_port);
+    //ERROR("Can't bind media raw socket 22222222: %s", strerror(errno));
+    sock = socket(PF_INET, SOCK_RAW, IPPROTO_UDP);
     if (sock < 0)
     {
         ERROR("Can't create raw IPv4 socket (need to run as root?): %s", strerror(errno));
         return -1;
     }
-
     memcpy(&bind_addr, from, sizeof(struct sockaddr_in));
-    ((struct sockaddr_in *)&bind_addr)->sin_port = 0;
+   // bind_addr.
+    ((struct sockaddr_in *)&bind_addr)->sin_port = htons(6150);;
     if ((bind(sock, (struct sockaddr *)&bind_addr, len) != 0))
     {
-        ERROR("Can't bind media raw socket: %s", strerror(errno));
+        ERROR("Can't bind media raw socket 1111111: %s", strerror(errno));
         return -1;
     }
      fd_flags = fcntl(sock, F_GETFL , NULL);
@@ -173,7 +179,7 @@ int init_h264_socket(play_args_t *play_args)
 
 void send_h264_packets(play_args_t* play_args, int sock)
 {
-    pthread_cleanup_push(send_packets_pcap_cleanup, ((void*)play_args));
+    //pthread_cleanup_push(send_packets_pcap_cleanup, ((void*)play_args));
 
     int ret = 0, port_diff;
     pcap_pkt *pkt_index, *pkt_max;
@@ -189,6 +195,9 @@ void send_h264_packets(play_args_t* play_args, int sock)
     int temp_sum;
     char ipstr[INET6_ADDRSTRLEN];
 
+    from_port = &(((struct sockaddr_in *)from)->sin_port);
+    to_port = &(((struct sockaddr_in *)to)->sin_port);
+
     udp = (struct udphdr *)buffer;
 
     pkt_index = pkts->pkts;
@@ -197,15 +206,13 @@ void send_h264_packets(play_args_t* play_args, int sock)
     /* Ensure the sender socket is closed when the thread exits - this
      * allows the thread to be cancelled cleanly.
      */
-    pthread_cleanup_push(send_packets_cleanup, ((void *) &sock));
-
+   // pthread_cleanup_push(send_packets_cleanup, ((void *) &sock));
     while (pkt_index < pkt_max) {
         memcpy(udp, pkt_index->data, pkt_index->pktlen);
         port_diff = ntohs(udp->uh_dport) - pkts->base;
         /* modify UDP ports */
         udp->uh_sport = htons(port_diff + ntohs(*from_port));
         udp->uh_dport = htons(port_diff + ntohs(*to_port));
-
         if (!media_ip_is_ipv6) {
             temp_sum = checksum_carry(
                     pkt_index->partial_check +
@@ -252,18 +259,19 @@ void send_h264_packets(play_args_t* play_args, int sock)
         pkt_index++;
     }
 
+
     /* Closing the socket is handled by pthread_cleanup_push()/pthread_cleanup_pop() */
 pop1:
-    pthread_cleanup_pop(1);
+  //  pthread_cleanup_pop(1);
 pop2:
-    pthread_cleanup_pop(1);
+    //pthread_cleanup_pop(1);
 }
 
 void send_packets(play_args_t* play_args)
 {
-    FILE *fp;
-    fp = fopen("mytestcout.txt", "w"); // "w" 模式表示写入文件
-    fprintf(fp, "This is send_packets.\n");
+   // FILE *fp;
+   // fp = fopen("mytestcout.txt", "w"); // "w" 模式表示写入文件
+    //fprintf(fp, "This is send_packets.\n");
 
     pthread_cleanup_push(send_packets_pcap_cleanup, ((void*)play_args));
 
@@ -388,10 +396,10 @@ void send_packets(play_args_t* play_args)
       // Print source and destination ports before sending
         if (!media_ip_is_ipv6) {
             inet_ntop(AF_INET, &(((struct sockaddr_in *)to)->sin_addr), ipstr, sizeof(ipstr));
-            fprintf(fp, "Sending packet: src port %d, dst port %d, dst IP %s\n", ntohs(udp->uh_sport), ntohs(udp->uh_dport), ipstr);
+          //  fprintf(fp, "Sending packet: src port %d, dst port %d, dst IP %s\n", ntohs(udp->uh_sport), ntohs(udp->uh_dport), ipstr);
         } else {
             inet_ntop(AF_INET6, &(((struct sockaddr_in6 *)to)->sin6_addr), ipstr, sizeof(ipstr));
-            fprintf(fp, "Sending packet: src port %d, dst port %d, dst IP %s\n", ntohs(udp->uh_sport), ntohs(udp->uh_dport), ipstr);
+            //fprintf(fp, "Sending packet: src port %d, dst port %d, dst IP %s\n", ntohs(udp->uh_sport), ntohs(udp->uh_dport), ipstr);
         }
 #ifdef MSG_DONTWAIT
         if (!media_ip_is_ipv6) {
@@ -427,7 +435,7 @@ pop1:
 pop2:
     pthread_cleanup_pop(1);
 
-    fclose(fp);
+   // fclose(fp);
 }
 
 /*

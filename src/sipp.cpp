@@ -775,14 +775,54 @@ static int recvRtcpVidoeMcSub7(int sock)
 #endif 
 #ifdef SIP_SERVER
 
-static int recvRtcpVidoeMcSub4(int sock, ThreadPool& pool,std::vector<std::future<void>>& futures, std::string path, int video_sock)
+static int recvRtcpVidoeMcSub4(int sock, ThreadPool &pool, std::vector<std::future<void>> &futures, std::string path, int video_sock)
 {
+
+    if (sock < 0)
+    {
+        LOG_INFO(" Invalid socket ");
+        return 1;
+    }
+    int status = fcntl(sock, F_GETFL, 0);
+    if (status == -1)
+    {
+        LOG_INFO("Failed to get socket status");
+        return 1;
+    }
+
+    fd_set read_fds;
+    FD_ZERO(&read_fds);
+    FD_SET(sock, &read_fds);
+
+    struct timeval timeout;
+    timeout.tv_sec = 10; // 设置超时时间为 10 秒
+    timeout.tv_usec = 0;
+
+    int ready = select(sock + 1, &read_fds, nullptr, nullptr, &timeout);
+    if (ready == -1)
+    {
+    LOG_INFO( "Failed to check socket readiness");
+    return 1;
+    }
+    else if (ready == 0)
+    {
+    LOG_INFO(  "Socket timed out" );
+  //  return 1;
+    }
+    else if (!FD_ISSET(sock, &read_fds))
+    {
+   LOG_INFO( "Socket is not ready for reading" );
+    return 1;
+    }
+
     // 接收 RTCP 视频请求命令
     struct sockaddr_storage remote_addr_storage;
     socklen_t remote_addr_len = sizeof(remote_addr_storage);
     std::vector<char> msg;
     msg.resize(media_bufsize);
 
+
+    LOG_INFO( " begin to recvfrom " );
     size_t n = recvfrom(sock, msg.data(), media_bufsize, 0, (struct sockaddr *)&remote_addr_storage, &remote_addr_len);
     if (n < 0)
     {
@@ -806,18 +846,18 @@ static int recvRtcpVidoeMcSub4(int sock, ThreadPool& pool,std::vector<std::futur
     size_t totalLength = (length + 1) * 4;  // 报告包总长度
     LOG_INFO( " received head    ***************" << (int)header->version_padding_sourceCount <<" type is "<< (int)header->packetType << " len is "<< (int)header->length
      <<" length " << length <<" total "<< totalLength) ;
-     RTCPVideoMC report;
-     report.header = *header;
-     report.reportData.resize(totalLength - 8);
-     memcpy(report.reportData.data(), msg.data() + 8, totalLength - 8);
-     for (uint8_t byte : report.reportData) {
-        LOG_INFO( "0x" << std::hex << static_cast<int>(byte) << " ");
-    }
+    //  RTCPVideoMC report;
+    //  report.header = *header;
+    //  report.reportData.resize(totalLength - 8);
+    //  memcpy(report.reportData.data(), msg.data() + 8, totalLength - 8);
+    //  for (uint8_t byte : report.reportData) {
+    //     LOG_INFO( "0x" << std::hex << static_cast<int>(byte) << " ");
+    // }
     LOG_INFO( " end receive video request");
     //同意视频请求命令
 
     RTCPVideoMC responseVideo;
-    responseVideo.header.version_padding_sourceCount = 0x84;
+    responseVideo.header.version_padding_sourceCount = 0x87;
     responseVideo.header.packetType =  0xcc;
     responseVideo.header.SSRC = htonl(0x00000000);
 
@@ -828,8 +868,9 @@ static int recvRtcpVidoeMcSub4(int sock, ThreadPool& pool,std::vector<std::futur
     };
     responseVideo.reportData = reportData;
     responseVideo.header.length = htons((sizeof(RTCPVideoHeader) + responseVideo.reportData.size()) / 4 - 1);
-    //发送视频1请求命令
+    //发送同意视频请求命令
     sendRtcpVidoeMc(&responseVideo, sock, remote_addr_storage);
+    LOG_INFO( " send agreement information ");
     //开启线程，发送H264视频流
     futures.push_back(pool.enqueue(std::make_shared<SendH264Task>(path,video_sock)));
 
@@ -913,24 +954,28 @@ static void rtcp_thread(void* param)
     play_args_video.free_pcap_when_done = 0;
     const int family = AF_INET;
     (_RCAST(struct sockaddr_in *, &(play_args_video.from)))->sin_port = htons(6150);
-    gai_getsockaddr(&play_args_video.to, "172.16.154.23", "10334",
+    gai_getsockaddr(&play_args_video.to, "172.16.154.23", "7100",
                         AI_NUMERICHOST | AI_NUMERICSERV, family);
     //等待视频1请求通知
-    std::string path1 = "/cygdrive/d/cygwin/cygwin64/ssrcf3e0099.pcap";
+    std::string path1 = "D:/cygwin/cygwin64/ssrcf3e0099.pcap";
     int video_sock = init_h264_socket(&play_args_video);
     recvRtcpVidoeMcSub4(sock,pool, futures, path1, video_sock);
 
+    LOG_INFO( "begin to send video2  ") ;
     //发送视频2通知
     sendRtcpVidoeMc(&video_notice, sock, remote_rtcp_addr);
     //等待视频2请求通知
     //440d491c
-     std::string path2 = "/cygdrive/d/cygwin/cygwin64/ssrc440d491c.pcap";
+    LOG_INFO( "wait for request for video2  ") ;
+     std::string path2 = "D:/cygwin/cygwin64/ssrc440d491c.pcap";
     recvRtcpVidoeMcSub4(sock,pool, futures, path2, video_sock);
 
     //视频1传输结束通知
     //视频2传输结束通知
 
 #else
+    recvRtcpVidoeMcSub6(sock);
+    recvRtcpVidoeMcSub7(sock);
     recvRtcpVidoeMcSub6(sock);
     recvRtcpVidoeMcSub7(sock);
 
@@ -956,59 +1001,91 @@ void SendH264Task::run()
     //                 ERROR("Can't create thread to send RTP packets");
     //             }
     //             pthread_attr_destroy(&attr);
+    LOG_INFO( "start run ") ;
     play_args_t play_args_video;
     play_args_video.free_pcap_when_done = 0;
     const int family = AF_INET;
     (_RCAST(struct sockaddr_in *, &(play_args_video.from)))->sin_port = htons(6150);
-    gai_getsockaddr(&play_args_video.to, "172.16.154.23", "10334",
+    gai_getsockaddr(&play_args_video.to, "172.16.154.23", "7100",
                     AI_NUMERICHOST | AI_NUMERICSERV, family);
 
     // P_value 文件名 pcap_pkts *M_pcapArgs
     pcap_pkts *M_pcapArgs = (pcap_pkts *)malloc(sizeof(*M_pcapArgs));
+    LOG_INFO( "before parse_play_args  " << m_filePath.c_str()) ;
     if (parse_play_args(m_filePath.c_str(), M_pcapArgs) == -1)
     {
         ERROR("Play pcap error");
     }
+    LOG_INFO( "parse_play_args end  ") ;
     if (access(M_pcapArgs->file, F_OK))
     {
         ERROR("Cannot read file %s", M_pcapArgs->file);
     }
     play_args_video.pcap = M_pcapArgs;
+    LOG_INFO( "begin to send h264 ") ;
     send_h264_packets(&play_args_video, m_video_sock);
+     LOG_INFO( "end to send h264 ") ;
 }
 
 static void rtp_video_recv_thread(void* param)
 {
-    LOG_INFO( " rtp_echo_thread  start 1111111111 "<<" ") ;
+    LOG_INFO( " rtp_video_recv_thread  start 1111111111 "<<" ") ;
+    // int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    int sock = socket(PF_INET, SOCK_RAW, IPPROTO_UDP);
+    if (sock < 0) {
+       LOG_INFO("socket creation failed");
+    }
+
+    // 设置目标 IP 和端口号
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr("172.16.154.23");
+    addr.sin_port = htons(7100);
+
+    // 绑定套接字到指定 IP 和端口
+    if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        LOG_INFO( "bind failed" );
+        close(sock);
+        return ;
+    }
+
     std::vector<char> msg;
     msg.resize(media_bufsize);
     ssize_t nr; //ns;
     sipp_socklen_t len;
     struct sockaddr_storage remote_rtp_addr;
-    int sock = *(int *)param;
+    //int sock = *(int *)param;
 
 
-    int                   rc;
-    sigset_t              mask;
-    sigfillset(&mask); /* Mask all allowed signals */
-    rc = pthread_sigmask(SIG_BLOCK, &mask, nullptr);
-    if (rc) {
-        WARNING("pthread_sigmask returned %d", rc);
-        return;
-    }
+    // int                   rc;
+    // sigset_t              mask;
+    // sigfillset(&mask); /* Mask all allowed signals */
+    // rc = pthread_sigmask(SIG_BLOCK, &mask, nullptr);
+    // if (rc) {
+    //     WARNING("pthread_sigmask returned %d", rc);
+    //     return;
+    // }
 
     // timeout after 100ms, to enable graceful termination of the thread
-    struct timeval tv = {0, 100000};
-    if ((setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) ||
-        (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0)) {
-        WARNING("Cannot set socket timeout. error: %d", errno);
-    }
-
+    // struct timeval tv = {0, 100000};
+    // if ((setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) ||
+    //     (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0)) {
+    //     WARNING("Cannot set socket timeout. error: %d", errno);
+    // }
+    int nTemp = 0;
     while (run_echo_thread.load(std::memory_order_relaxed)) {
         len = sizeof(remote_rtp_addr);
         nr = recvfrom(sock, msg.data(), media_bufsize, 0,
                       (sockaddr*)&remote_rtp_addr, &len);
 
+        if (nr > 0)
+        {
+            nTemp ++;
+            if (nTemp < 10)
+            {
+                LOG_INFO( " recv something ") ;
+            }
+        }
         if (nr < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK)
                 continue;
@@ -1693,12 +1770,12 @@ static int bind_rtp_sockets(struct sockaddr_storage* media_sa, int try_port, boo
 
     /* Create and bind the second/video socket to try_port+2 */
     /* (+1 is reserved for RTCP) */
-    media_socket_video = create_socket(media_sa, 6150, last_attempt, "video");
-    if (media_socket_video == -1) {
-        ::close(media_socket_audio);
-        media_socket_audio = -1;
-        return -1;
-    }
+    // media_socket_video = create_socket(media_sa, 6150, last_attempt, "video");
+    // if (media_socket_video == -1) {
+    //     ::close(media_socket_audio);
+    //     media_socket_audio = -1;
+    //     return -1;
+    // }
 
     return 0;
 }
@@ -2599,17 +2676,28 @@ int main(int argc, char *argv[])
         setup_stdin_socket();
     }
 
-    if (rtp_echo_enabled && media_socket_audio > 0) {
-        if (pthread_create(&pthread2_id, nullptr,
-                (void *(*)(void *))rtp_echo_thread, &media_socket_audio) == -1) {
-            ERROR_NO("Unable to create RTP echo thread");
+    if (rtp_echo_enabled && media_socket_audio > 0)
+    {
+        if (pthread2_id == 0)
+        {
+
+            if (pthread_create(&pthread2_id, nullptr,
+                               (void *(*)(void *))rtp_echo_thread, &media_socket_audio) == -1)
+            {
+                ERROR_NO("Unable to create RTP echo thread");
+            }
+            LOG_INFO(" start one audio thread");
         }
     }
 
     /* Creating second RTP echo thread for video. */
-    if (rtp_echo_enabled && media_socket_video > 0) {
+    // if (rtp_echo_enabled && media_socket_video > 0) {
+    if (pthread3_id == 0)
+    {
+        media_socket_video = 7100;
         if (pthread_create(&pthread3_id, nullptr,
-                (void *(*)(void *)) rtp_video_recv_thread, &media_socket_video) == -1) {
+                           (void *(*)(void *))rtp_video_recv_thread, &media_socket_video) == -1)
+        {
             ERROR_NO("Unable to create video RTP echo thread");
         }
     }
