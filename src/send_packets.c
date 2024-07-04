@@ -250,7 +250,7 @@ void send_h264_packets(play_args_t* play_args, int sock)
 #endif
         if (ret < 0) {
             WARNING("send_packets.c: sendto failed with error: %s", strerror(errno));
-            goto pop1;
+            return;
         }
 
         rtp_pckts_pcap++;
@@ -261,9 +261,9 @@ void send_h264_packets(play_args_t* play_args, int sock)
 
 
     /* Closing the socket is handled by pthread_cleanup_push()/pthread_cleanup_pop() */
-pop1:
+//pop1:
   //  pthread_cleanup_pop(1);
-pop2:
+//pop2:
     //pthread_cleanup_pop(1);
 }
 
