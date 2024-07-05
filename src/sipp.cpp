@@ -69,6 +69,9 @@ extern SIPpSocket *stdin_socket;
 static int argiFileName;
 static std::atomic<bool> run_echo_thread(true);
 
+static int create_socket(struct sockaddr_storage* media_sa, int try_port, bool last_attempt,
+                         const char *type);
+
 /***************** Option Handling Table *****************/
 struct sipp_option {
     const char *option;
@@ -881,7 +884,39 @@ static int recvRtcpVidoeMcSub4(int sock, ThreadPool &pool, std::vector<std::futu
 
 static void rtcp_thread(void* param)
 {
-    LOG_INFO(" remote_ip is  "<< remote_ip <<" ") ;
+    while (mc_remote_rtcp_port == 0)
+    {
+       std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+    LOG_INFO(" remote_ip is  "<< remote_ip <<" " <<" mc_remote_rtcp_port " << mc_remote_rtcp_port) ;
+
+    while (mc_rtcp_port == 0)
+    {
+        LOG_INFO(" mc_rtcp_port is zero ");
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+    struct sockaddr_storage media_sockaddr = {0,};
+    struct addrinfo* local_addr;
+    struct addrinfo hints = {0,};
+    hints.ai_flags  = AI_PASSIVE;
+    hints.ai_family = PF_UNSPEC; /* use local_ip_is_ipv6 as hint? */
+     /* Resolving local IP */
+    if (getaddrinfo(media_ip,
+                    nullptr,
+                    &hints,
+                    &local_addr) != 0) {
+        ERROR("Unknown RTP address '%s'.\n"
+              "Use 'sipp -h' for details", media_ip);
+    }
+    memcpy(&media_sockaddr, local_addr->ai_addr, socklen_from_addr(_RCAST(struct sockaddr_storage*, local_addr->ai_addr)));
+    freeaddrinfo(local_addr);
+    media_socket_rtcp = create_socket(&media_sockaddr, mc_rtcp_port, true, "rtcp");
+    if (media_socket_rtcp == -1) {
+        ::close(media_socket_rtcp);
+        media_socket_rtcp = -1;
+        ERROR("create rtcp address '%s'.\n"
+              " failed ", media_ip);
+    }
 
     ThreadPool pool(4);
     std::vector<std::future<void>> futures;
@@ -1854,15 +1889,20 @@ static void setup_media_sockets()
         }
     }
 
-    const bool last_attempt = (
-                try_counter == max_tries || media_port >= (max_rtp_port - 2));
-    media_socket_rtcp = create_socket(&media_sockaddr, media_port + 20, last_attempt, "rtcp");
-    if (media_socket_rtcp == -1) {
-        ::close(media_socket_rtcp);
-        media_socket_rtcp = -1;
-        ERROR("create rtcp address '%s'.\n"
-              " failed ", media_ip);
-    }
+    // while (mc_rtcp_port == 0)
+    // {
+    //     LOG_INFO(" mc_rtcp_port is zero ");
+    //     std::this_thread::sleep_for(std::chrono::seconds(1));
+    // }
+    // const bool last_attempt = (
+    //             try_counter == max_tries || media_port >= (max_rtp_port - 2));
+    // media_socket_rtcp = create_socket(&media_sockaddr, mc_rtcp_port, last_attempt, "rtcp");
+    // if (media_socket_rtcp == -1) {
+    //     ::close(media_socket_rtcp);
+    //     media_socket_rtcp = -1;
+    //     ERROR("create rtcp address '%s'.\n"
+    //           " failed ", media_ip);
+    // }
 }
 
 /* Main */
