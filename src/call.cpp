@@ -221,6 +221,7 @@ void call::get_remote_media_addr(std::string const &msg)
 #define SDP_AUDIOPORT_PREFIX "\nm=audio"
 #define SDP_IMAGEPORT_PREFIX "\nm=image"
 #define SDP_VIDEOPORT_PREFIX "\nm=video"
+#define SDP_MCRTCPPORT_PREFIX "\nm=application"
 std::string call::extract_rtp_remote_addr(const char* msg, int &ip_ver, int &audio_port, int &video_port)
 {
     const char* search;
@@ -329,6 +330,43 @@ std::string call::extract_rtp_remote_addr(const char* msg, int &ip_ver, int &aud
             }
         }
     }
+
+    int mc_rtcp_port = 0;
+    /* And find the port number for the video stream */
+    pos1 = msgstr.find(SDP_MCRTCPPORT_PREFIX, 0, 14);
+    if (pos1 != std::string::npos)
+    {
+        pos1 += 14; /* skip SDP_VIDEOPORT_PREFIX */
+        pos1 += 1; /* skip first whitespace */
+        pos2 = msgstr.find(" ", pos1); /* find second whitespace AFTER port */
+        if (pos2 != std::string::npos)
+        {
+            sub = msgstr.substr(pos1, pos2-pos1); /* extract port substring */
+           sscanf(sub.c_str(), "%d", &mc_rtcp_port); /* parse port substring as integer */
+        }
+    }
+
+    /* first video m-line had port of ZERO -- look for second video m-line */
+    if (mc_rtcp_port == 0)
+    {
+        pos1 = msgstr.find(SDP_VIDEOPORT_PREFIX, pos2, 14);
+        if (pos1 != std::string::npos)
+        {
+            pos1 += 14; /* skip SDP_VIDEOPORT_PREFIX  */
+            pos1 += 1; /* skip first whitespace */
+            pos2 = msgstr.find(" ", pos1); /* find second whitespace AFTER port */
+            if (pos2 != std::string::npos)
+            {
+                sub = msgstr.substr(pos1, pos2-pos1); /* extract port substring */
+                sscanf(sub.c_str(), "%d", &mc_rtcp_port);
+            }
+        }
+    }
+
+    mc_remote_audio_port = audio_port;
+    mc_remote_video_port = video_port;
+    mc_remote_rtcp_port = mc_rtcp_port;
+    LOG_INFO(" remote audio_port " << audio_port << "  video_port " << video_port << " mc rtcp port " << mc_rtcp_port);
 
     return host;
 }
@@ -1840,7 +1878,7 @@ bool call::next()
 
 bool call::executeMessage(message *curmsg)
 {
-    LOG_INFO("start");
+    LOG_INFO("start executeMessage " << curmsg->desc);
     T_ActionResult actionResult = E_AR_NO_ERROR;
 
     if (curmsg->pause_distribution || curmsg->pause_variable != -1) {
@@ -1882,8 +1920,8 @@ bool call::executeMessage(message *curmsg)
         if(next_retrans) {
             return true;
         }
-
         send_status = sendCmdMessage(curmsg);
+        LOG_INFO("send_status " << send_status);
 
         if(send_status != 0) { /* Send error */
             return false; /* call deleted */
@@ -1925,6 +1963,7 @@ bool call::executeMessage(message *curmsg)
 
         /* Handle counters and RTDs for this message. */
         do_bookkeeping(curmsg);
+        LOG_INFO("do_bookkeeping " );
 
         /* decide whether to increment cseq or not
          * basically increment for anything except response, ACK or CANCEL
@@ -2040,6 +2079,7 @@ bool call::executeMessage(message *curmsg)
             char *msg = queued_msg;
             queued_msg = nullptr;
             bool ret = process_incoming(msg);
+            LOG_INFO("process_incoming " << ret);
             free(msg);
             return ret;
         } else if (recv_timeout) {
@@ -2106,7 +2146,7 @@ bool call::run()
         delete this;
         return false;
     }
-    //outf<<"   " <<" "<<__FUNCTION__ <<" "<<__LINE__ <<std::endl ;
+    LOG_INFO("*******************   start *************************");
 
     update_clock_tick();
 
@@ -2214,6 +2254,7 @@ bool call::run()
         paused_until = 0;
         return next();
     }
+    LOG_INFO("*******************   end *************************");
     return executeMessage(curmsg);
 }
 
@@ -2676,6 +2717,7 @@ char* call::createSendingMessage(SendingMessage *src, int P_index, char *msg_buf
         case E_Message_Auto_Media_Port:
         case E_Message_Media_Port: {
             int port = media_port + comp->offset;
+            LOG_INFO(" E_Message_Media_Port " << port << " media_port is " << media_port << " offset is "<< comp->offset);
             if (comp->type == E_Message_Auto_Media_Port) {
                 port += (4 * (number - 1)) % 10000;
             }
@@ -2714,6 +2756,7 @@ char* call::createSendingMessage(SendingMessage *src, int P_index, char *msg_buf
         }
         case E_Message_RTPStream_Audio_Port:
         {
+            LOG_INFO(" E_Message_RTPStream_Audio_Port start ");
           int temp_audio_port = 0;
           // Only obtain port for RTP ([rtpstream_audio_port+0]) *BUT NOT* RTCP ([rtpstream_audio_port+1])
           if (comp->offset == 0) {
@@ -2725,6 +2768,7 @@ char* call::createSendingMessage(SendingMessage *src, int P_index, char *msg_buf
           } else if (comp->offset >= 1) {
               temp_audio_port = rtpstream_callinfo.local_audioport + comp->offset;
           }
+          LOG_INFO(" E_Message_RTPStream_Audio_Port start temp_audio_port " <<temp_audio_port << " rtpstream_callinfo.local_audioport "<< rtpstream_callinfo.local_audioport );
 #ifdef USE_TLS
           logSrtpInfo("call::createSendingMessage():  E_Message_RTPStream_Audio_Port: %d\n", temp_audio_port);
 #endif // USE_TLS
@@ -3993,6 +4037,52 @@ char* call::createSendingMessage(SendingMessage *src, int P_index, char *msg_buf
     if (!auth_body) {
         auth_body = "";
     }
+    if (body)
+    {
+        //LOG_INFO("body is " << body);
+        // 直接从body中提取本地 mc_audio_port mc_video_port mc_rtcp_port
+        const char *pTemp = body + 4;
+        std::istringstream iss(pTemp);
+        std::string line;
+        std::vector<std::string> lines;
+        // 将 msg_buffer 分割成行
+        while (std::getline(iss, line, '\n'))
+        {
+            if (line.size() > 5)
+            {
+                lines.push_back(line);
+            }
+        }
+        // 遍历每一行,提取所需的信息
+        for (const auto &line : lines)
+        {
+            if (line.find("m=audio") != std::string::npos)
+            {
+                std::istringstream audioLine(line);
+                std::string token;
+                std::getline(audioLine, token, ' '); // 跳过 "m=audio"
+                std::getline(audioLine, token, ' '); // 提取端口号
+                mc_audio_port = std::stoi(token);
+            }
+            else if (line.find("m=video") != std::string::npos)
+            {
+                std::istringstream audioLine(line);
+                std::string token;
+                std::getline(audioLine, token, ' '); // 跳过 "m=audio"
+                std::getline(audioLine, token, ' '); // 提取端口号
+                mc_video_port = std::stoi(token);
+            }
+            else if (line.find("m=application") != std::string::npos)
+            {
+                std::istringstream audioLine(line);
+                std::string token;
+                std::getline(audioLine, token, ' '); // 跳过 "m=audio"
+                std::getline(audioLine, token, ' '); // 提取端口号
+                mc_rtcp_port = std::stoi(token);
+            }
+        }
+        LOG_INFO("body end ***************" << " mc_audio_port is " << mc_audio_port << " mc_video_port " << mc_video_port << " mc_rtcp_port " << mc_rtcp_port);
+    }
 
     /* Fix up the length. */
     if (length_marker) {
@@ -4586,7 +4676,10 @@ bool call::process_incoming(const char* msg, const struct sockaddr_storage* src)
     }
 
     /* Check if message has a SDP in it; and extract media information. */
-    if (!strcmp(get_header_content(msg, "Content-Type:"), "application/sdp") &&
+    // if (!strcmp(get_header_content(msg, "Content-Type:"), "application/sdp") &&
+    //       (hasMedia == 1) &&
+    //       (!curmsg->ignoresdp))
+    if (strstr(msg, "application/sdp") &&
           (hasMedia == 1) &&
           (!curmsg->ignoresdp))
     {

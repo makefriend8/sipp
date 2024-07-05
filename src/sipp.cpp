@@ -901,7 +901,7 @@ static void rtcp_thread(void* param)
     memset(&remote_addr, 0, sizeof(remote_addr));
     remote_addr.sin_family = AF_INET;
     remote_addr.sin_addr.s_addr = inet_addr(remote_ip);
-    remote_addr.sin_port = htons(media_port + 20);
+    remote_addr.sin_port = htons(mc_remote_rtcp_port);
 
     // 将 sockaddr_in 转换为 sockaddr_storage
     memcpy(&remote_rtcp_addr, &remote_addr, sizeof(remote_addr));
@@ -953,8 +953,8 @@ static void rtcp_thread(void* param)
     play_args_t play_args_video;
     play_args_video.free_pcap_when_done = 0;
     const int family = AF_INET;
-    (_RCAST(struct sockaddr_in *, &(play_args_video.from)))->sin_port = htons(6150);
-    gai_getsockaddr(&play_args_video.to, "172.16.154.23", "7100",
+    (_RCAST(struct sockaddr_in *, &(play_args_video.from)))->sin_port = htons(mc_video_port);
+    gai_getsockaddr(&play_args_video.to, remote_ip, std::to_string(mc_remote_video_port).c_str(),
                         AI_NUMERICHOST | AI_NUMERICSERV, family);
     //等待视频1请求通知
     std::string path1 = "D:/cygwin/cygwin64/ssrcf3e0099.pcap";
@@ -1005,8 +1005,8 @@ void SendH264Task::run()
     play_args_t play_args_video;
     play_args_video.free_pcap_when_done = 0;
     const int family = AF_INET;
-    (_RCAST(struct sockaddr_in *, &(play_args_video.from)))->sin_port = htons(6150);
-    gai_getsockaddr(&play_args_video.to, "172.16.154.23", "7100",
+    (_RCAST(struct sockaddr_in *, &(play_args_video.from)))->sin_port = htons(mc_video_port);
+    gai_getsockaddr(&play_args_video.to, remote_ip, std::to_string(mc_remote_video_port).c_str(),
                     AI_NUMERICHOST | AI_NUMERICSERV, family);
 
     // P_value 文件名 pcap_pkts *M_pcapArgs
@@ -1030,6 +1030,10 @@ void SendH264Task::run()
 static void rtp_video_recv_thread(void* param)
 {
     LOG_INFO( " rtp_video_recv_thread  start 1111111111 "<<" ") ;
+#ifdef SIP_SERVER
+return;
+#endif
+
     // int sock = socket(AF_INET, SOCK_DGRAM, 0);
     int sock = socket(PF_INET, SOCK_RAW, IPPROTO_UDP);
     if (sock < 0) {
@@ -1039,8 +1043,8 @@ static void rtp_video_recv_thread(void* param)
     // 设置目标 IP 和端口号
     struct sockaddr_in addr;
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr("172.16.154.23");
-    addr.sin_port = htons(7100);
+    addr.sin_addr.s_addr = inet_addr(local_ip);
+    addr.sin_port = htons(mc_video_port);
 
     // 绑定套接字到指定 IP 和端口
     if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {

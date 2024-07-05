@@ -249,7 +249,7 @@ MAYBE_EXTERN char               control_ip[40];
 MAYBE_EXTERN int                control_port            DEFVAL(0);
 MAYBE_EXTERN int                buff_size               DEFVAL(65536);
 MAYBE_EXTERN int                tcp_readsize            DEFVAL(65536);
-MAYBE_EXTERN int                hasMedia                DEFVAL(0);
+MAYBE_EXTERN int                hasMedia                DEFVAL(1);
 MAYBE_EXTERN int                min_rtp_port            DEFVAL(DEFAULT_MIN_RTP_PORT);
 MAYBE_EXTERN int                max_rtp_port            DEFVAL(DEFAULT_MAX_RTP_PORT);
 MAYBE_EXTERN int                rtp_default_payload     DEFVAL(DEFAULT_RTP_PAYLOAD);
@@ -267,6 +267,12 @@ MAYBE_EXTERN char               media_ip[127];          /* also used for hostnam
 MAYBE_EXTERN int                media_port              DEFVAL(0);
 MAYBE_EXTERN size_t             media_bufsize           DEFVAL(2048);
 MAYBE_EXTERN bool               media_ip_is_ipv6        DEFVAL(false);
+MAYBE_EXTERN int                mc_audio_port           DEFVAL(0);
+MAYBE_EXTERN int                mc_video_port           DEFVAL(0);
+MAYBE_EXTERN int                mc_rtcp_port            DEFVAL(0);
+MAYBE_EXTERN int                mc_remote_audio_port    DEFVAL(0);
+MAYBE_EXTERN int                mc_remote_video_port    DEFVAL(0);
+MAYBE_EXTERN int                mc_remote_rtcp_port     DEFVAL(0);
 MAYBE_EXTERN char               remote_ip[127];         /* also used for hostnames */
 MAYBE_EXTERN char               remote_ip_w_brackets[42]; /* with [brackets] in case of IPv6 */
 MAYBE_EXTERN int                remote_port             DEFVAL(DEFAULT_PORT);
