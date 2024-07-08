@@ -16,7 +16,31 @@ endif()
 # Include binary dir first, where we add generated config.h and
 # version.h. If nothing is found there (release tar) use the version.h
 # from the source.
+add_definitions(-D_GNU_SOURCE)
+
+function(detect_cygwin)
+    if(UNIX AND NOT APPLE)
+        include(CheckCXXCompilerFlag)
+        check_cxx_compiler_flag(-mwindows COMPILER_SUPPORTS_MWINDOWS)
+        if(COMPILER_SUPPORTS_MWINDOWS)
+            message(STATUS "Cygwin environment detected")
+            # 在这里添加 Cygwin 专有的配置项
+            set(CYGWIN_DETECTED TRUE PARENT_SCOPE)
+        else()
+            message(STATUS "Not a Cygwin environment")
+            set(CYGWIN_DETECTED FALSE PARENT_SCOPE)
+        endif()
+    endif()
+endfunction()
+
+detect_cygwin()
+
+
 include_directories(
+  if(CYGWIN_DETECTED)
+  #"D:/cygwin/cygwin64/lib/WpdPack/Include"
+  "/cygdrive/d/cygwin/cygwin64/lib/WpdPack/Include"
+  endif()
   ${PROJECT_BINARY_DIR}
   ${PROJECT_SOURCE_DIR}/include)
 
@@ -212,18 +236,37 @@ if(PKG_CONFIG_FOUND)
   pkg_search_module(CURSES_LIBRARY ncursesw cursesw ncurses curses)
   if(CURSES_LIBRARY_FOUND)
     set(CURSES_LIBRARY ${CURSES_LIBRARY_LIBRARIES})
+    message(STATUS "111 Found ncurses library: ${CURSES_LIBRARY}")
+  else()
+    message(STATUS "1111 Did not find ncurses library")
   endif()
   pkg_search_module(TINFO_LIBRARY tinfo)
   if(TINFO_LIBRARY_FOUND)
     set(TINFO_LIBRARY ${TINFO_LIBRARY_LIBRARIES})
   endif()
 endif()
+
+if(CYGWIN_DETECTED)
+#find_package(Curses REQUIRED)
+#if(CURSES_FOUND)
+#  message(STATUS "Found ncurses library: ${CURSES_LIBRARY}")
+#else()
+#  message(STATUS "Did not find ncurses library")
+#endif()
+
+set(CYGWIN_LIB_DIR "/cygwin/cygwin64/lib")
+
+message(STATUS "cygwin now ***************************************************************")
+endif()
+
+
 if(NOT CURSES_LIBRARY)
   find_library(CURSES_LIBRARY NAMES ncursesw cursesw ncurses curses)
 endif()
 if(NOT TINFO_LIBRARY)
   find_library(TINFO_LIBRARY NAMES tinfo)
 endif()
+#set(CURSES_LIBRARY "D:/cygwin/cygwin64/lib/libncurses.a")
 if(CURSES_LIBRARY)
   if(BUILD_STATIC)
     add_definitions("-DNCURSES_STATIC")
@@ -283,7 +326,22 @@ if(USE_SSL)
   endif(SSL_INCLUDE_DIRS)
 endif(USE_SSL)
 
+if(CYGWIN_DETECTED)
+
+#"/cygdrive/d/cygwin/cygwin64/lib/WpdPack/Include"
+
+#set(PCAP_LIBRARY "D:/cygwin/cygwin64/lib/WpdPack/Lib/x64/wpcap.lib")
+#set(CAP_LIBRARY "D:/cygwin/cygwin64/lib/WpdPack/Lib/x64/Packet.lib")
+set(PCAP_LIBRARY "/cygdrive/d/cygwin/cygwin64/lib/WpdPack/Lib/x64/wpcap.lib")
+set(CAP_LIBRARY "/cygdrive/d/cygwin/cygwin64/lib/WpdPack/Lib/x64/Packet.lib")
+endif()
 if(USE_PCAP)
+if(CYGWIN_DETECTED)
+set(PCAP_ROOT_DIR "/cygdrive/d/cygwin/cygwin64/lib/WpdPack" CACHE PATH "Path to WpdPack directory")
+set(PCAP_INCLUDE_DIRS "${PCAP_ROOT_DIR}/Include")
+set(PCAP_LIBRARY_DIRS "${PCAP_ROOT_DIR}/Lib")
+endif()
+
   set(PCAP_LIBRARIES ${PCAP_LIBRARY})
   if(PKG_CONFIG_FOUND)
     pkg_search_module(PCAP libpcap)
