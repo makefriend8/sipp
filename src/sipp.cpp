@@ -817,47 +817,59 @@ static int recvRtcpVidoeMcSub4(int sock, ThreadPool &pool, std::vector<std::futu
    LOG_INFO( "Socket is not ready for reading" );
     return 1;
     }
-
-    // 接收 RTCP 视频请求命令
     struct sockaddr_storage remote_addr_storage;
-    socklen_t remote_addr_len = sizeof(remote_addr_storage);
-    std::vector<char> msg;
-    msg.resize(media_bufsize);
-
-
-    LOG_INFO( " begin to recvfrom " );
-    size_t n = recvfrom(sock, msg.data(), media_bufsize, 0, (struct sockaddr *)&remote_addr_storage, &remote_addr_len);
-    if (n < 0)
+    while (1)
     {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
+
+        // 接收 RTCP 视频请求命令
+        socklen_t remote_addr_len = sizeof(remote_addr_storage);
+        std::vector<char> msg;
+        msg.resize(5000);
+
+        LOG_INFO(" begin to recvfrom ");
+        size_t n = recvfrom(sock, msg.data(), media_bufsize, 0, (struct sockaddr *)&remote_addr_storage, &remote_addr_len);
+        if (n < 0)
         {
-            LOG_INFO(" errno is " << errno << " is impossible ");
-            // 没有完全接收到数据,继续等待，直接死锁等待，这是测试程序，问题不大
-            // continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                LOG_INFO(" errno is " << errno << " is impossible ");
+                // 没有完全接收到数据,继续等待，直接死锁等待，这是测试程序，问题不大
+                // continue;
+            }
+            else
+            {
+                WARNING("%s %i",
+                        "Error on RTP echo reception - stopping echo - errno=",
+                        errno);
+                close(sock);
+                return 1;
+            }
         }
-        else
+        LOG_INFO(" received n  " << n);
+        RTCPVideoHeader *header = (RTCPVideoHeader *)msg.data();
+        uint16_t length = ntohs(header->length);
+        size_t totalLength = (length + 1) * 4; // 报告包总长度
+        LOG_INFO(" received head    ***************" << (int)header->version_padding_sourceCount << " type is " << (int)header->packetType << " len is " << (int)header->length
+                                                     << " length " << length << " total " << totalLength << " n is " << n);
+        if (header->packetType == 200)
         {
-            WARNING("%s %i",
-                    "Error on RTP echo reception - stopping echo - errno=",
-                    errno);
-            close(sock);
-            return 1;
+            continue;
         }
+        if (header->packetType == 204)
+        {
+            LOG_INFO(" receive mc video request");
+            break;
+        }
+        //  RTCPVideoMC report;
+        //  report.header = *header;
+        //  report.reportData.resize(totalLength - 8);
+        //  memcpy(report.reportData.data(), msg.data() + 8, totalLength - 8);
+        //  for (uint8_t byte : report.reportData) {
+        //     LOG_INFO( "0x" << std::hex << static_cast<int>(byte) << " ");
+        // }
+        LOG_INFO(" end receive video request");
+        // 同意视频请求命令
     }
-    RTCPVideoHeader* header = (RTCPVideoHeader*)msg.data();
-    uint16_t length = ntohs(header->length);
-    size_t totalLength = (length + 1) * 4;  // 报告包总长度
-    LOG_INFO( " received head    ***************" << (int)header->version_padding_sourceCount <<" type is "<< (int)header->packetType << " len is "<< (int)header->length
-     <<" length " << length <<" total "<< totalLength) ;
-    //  RTCPVideoMC report;
-    //  report.header = *header;
-    //  report.reportData.resize(totalLength - 8);
-    //  memcpy(report.reportData.data(), msg.data() + 8, totalLength - 8);
-    //  for (uint8_t byte : report.reportData) {
-    //     LOG_INFO( "0x" << std::hex << static_cast<int>(byte) << " ");
-    // }
-    LOG_INFO( " end receive video request");
-    //同意视频请求命令
 
     RTCPVideoMC responseVideo;
     responseVideo.header.version_padding_sourceCount = 0x87;
@@ -964,7 +976,7 @@ static void rtcp_thread(void* param)
     //判断当前程序是服务端还是客户端，
 #ifdef SIP_SERVER
        // 构建 RTCP 报告包
-    // 启动后3秒发送rtcp通知， 目前使用172.16.10.148的第一个视频通知和第二个视频通知
+    // 启动后1秒发送rtcp通知， 目前使用172.16.10.148的第一个视频通知和第二个视频通知
     std::this_thread::sleep_for(std::chrono::milliseconds(3000)); 
     RTCPVideoMC video_notice;
     video_notice.header.version_padding_sourceCount = 0x86;
@@ -998,6 +1010,18 @@ static void rtcp_thread(void* param)
 
     LOG_INFO( "begin to send video2  ") ;
     //发送视频2通知
+
+
+    std::vector<uint8_t> reportData2 = {
+        0x4d, 0x43, 0x56, 0x31, 0x06, 0x34, 0x73, 0x69, 0x70, 0x3a, 0x31, 0x34, 0x38, 0x38, 0x39, 0x31,
+        0x39, 0x39, 0x30, 0x35, 0x32, 0x40, 0x74, 0x6b, 0x2e, 0x6d, 0x63, 0x78, 0x2e, 0x6d, 0x6e, 0x63,
+        0x30, 0x32, 0x30, 0x2e, 0x6d, 0x63, 0x63, 0x34, 0x36, 0x30, 0x2e, 0x33, 0x67, 0x70, 0x70, 0x6e,
+        0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x2e, 0x6f, 0x72, 0x67, 0x00, 0x00, 0x0e, 0x06, 0x44, 0x0d,
+        0x49, 0x1c, 0x00, 0x00
+    };
+    video_notice.reportData = reportData2;
+    video_notice.header.length = htons((sizeof(RTCPVideoHeader) + video_notice.reportData.size()) / 4 - 1);
+
     sendRtcpVidoeMc(&video_notice, sock, remote_rtcp_addr);
     //等待视频2请求通知
     //440d491c
