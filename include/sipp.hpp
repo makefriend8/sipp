@@ -350,6 +350,8 @@ MAYBE_EXTERN AllocVariableTable *userVariables          DEFVAL(nullptr);
 typedef std::map<int, VariableTable *> int_vt_map;
 MAYBE_EXTERN int_vt_map         userVarMap;
 
+MAYBE_EXTERN std::vector<std::string> g_videoPath;
+
 MAYBE_EXTERN SIPpSocket* new_sipp_socket(bool use_ipv6, int transport);
 MAYBE_EXTERN int      sipp_bind_socket(SIPpSocket *socket, struct sockaddr_storage *saddr, int *port);
 MAYBE_EXTERN void     sipp_customize_socket(SIPpSocket *socket);

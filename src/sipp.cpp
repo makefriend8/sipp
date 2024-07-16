@@ -896,6 +896,7 @@ static int recvRtcpVidoeMcSub4(int sock, ThreadPool &pool, std::vector<std::futu
 
 static void rtcp_thread(void* param)
 {
+    LOG_INFO(" start rtcp_thread") ;
     while (mc_remote_rtcp_port == 0)
     {
        std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -975,9 +976,50 @@ static void rtcp_thread(void* param)
 
     //判断当前程序是服务端还是客户端，
 #ifdef SIP_SERVER
-       // 构建 RTCP 报告包
+    // 构建 RTCP 报告包
     // 启动后1秒发送rtcp通知， 目前使用172.16.10.148的第一个视频通知和第二个视频通知
-    std::this_thread::sleep_for(std::chrono::milliseconds(3000)); 
+    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+    for (size_t i = 0; i < g_videoPath.size(); ++i)
+    {
+        std::string path = g_videoPath[i];
+        std::string ssrc = path.substr(path.find_last_of("_") + 1, path.find_last_of(".") - path.find_last_of("_") - 1);
+        unsigned long ssrc_long = std::stoul(ssrc, nullptr, 16);
+
+        RTCPVideoMC video_notice;
+        video_notice.header.version_padding_sourceCount = 0x86;
+        video_notice.header.packetType = 0xcc;
+        video_notice.header.SSRC = htonl(0x00000000);
+
+        // 添加报告包数据
+        std::vector<uint8_t> reportData = {
+            0x4d, 0x43, 0x56, 0x31, 0x06, 0x34, 0x73, 0x69, 0x70, 0x3a, 0x31, 0x34, 0x38, 0x38, 0x39, 0x31,
+            0x39, 0x39, 0x30, 0x33, 0x32, 0x40, 0x74, 0x6b, 0x2e, 0x6d, 0x63, 0x78, 0x2e, 0x6d, 0x6e, 0x63,
+            0x30, 0x32, 0x30, 0x2e, 0x6d, 0x63, 0x63, 0x34, 0x36, 0x30, 0x2e, 0x33, 0x67, 0x70, 0x70, 0x6e,
+            0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x2e, 0x6f, 0x72, 0x67, 0x00, 0x00, 0x0e, 0x06, 0x0f, 0x3e,
+            0x00, 0x99, 0x00, 0x00};
+        reportData[reportData.size() - 6] = static_cast<uint8_t>((ssrc_long >> 24) & 0xFF);
+        reportData[reportData.size() - 5] = static_cast<uint8_t>((ssrc_long >> 16) & 0xFF);
+        reportData[reportData.size() - 4] = static_cast<uint8_t>((ssrc_long >> 8) & 0xFF);
+        reportData[reportData.size() - 3] = static_cast<uint8_t>(ssrc_long & 0xFF);
+
+        video_notice.reportData = reportData;
+        video_notice.header.length = htons((sizeof(RTCPVideoHeader) + video_notice.reportData.size()) / 4 - 1);
+        // 发送视频1通知
+        sendRtcpVidoeMc(&video_notice, sock, remote_rtcp_addr);
+
+        play_args_t play_args_video;
+        play_args_video.free_pcap_when_done = 0;
+        const int family = AF_INET;
+        (_RCAST(struct sockaddr_in *, &(play_args_video.from)))->sin_port = htons(mc_video_port);
+        gai_getsockaddr(&play_args_video.to, remote_ip, std::to_string(mc_remote_video_port).c_str(),
+                        AI_NUMERICHOST | AI_NUMERICSERV, family);
+        // 等待视频1请求通知
+        // std::string path1 = "D:/cygwin/cygwin64/ssrcf3e0099.pcap";
+        int video_sock = init_h264_socket(&play_args_video);
+        recvRtcpVidoeMcSub4(sock, pool, futures, path, video_sock);
+    }
+
+/*
     RTCPVideoMC video_notice;
     video_notice.header.version_padding_sourceCount = 0x86;
     video_notice.header.packetType =  0xcc;
@@ -1031,7 +1073,7 @@ static void rtcp_thread(void* param)
 
     //视频1传输结束通知
     //视频2传输结束通知
-
+*/
 #else
     recvRtcpVidoeMcSub6(sock);
     recvRtcpVidoeMcSub7(sock);

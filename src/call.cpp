@@ -6175,9 +6175,15 @@ call::T_ActionResult call::executeAction(const char* msg, message* curmsg)
                 break;
             }
 #ifdef PCAPPLAY
-        } else if ((currentAction->getActionType() == CAction::E_AT_PLAY_PCAP_AUDIO) ||
+        }
+        else if (currentAction->getActionType() == CAction::E_AT_PLAY_PCAP_VIDEO) 
+        {
+            //
+        }
+        
+        else if ((currentAction->getActionType() == CAction::E_AT_PLAY_PCAP_AUDIO) ||
                    (currentAction->getActionType() == CAction::E_AT_PLAY_PCAP_IMAGE) ||
-                   (currentAction->getActionType() == CAction::E_AT_PLAY_PCAP_VIDEO) ||
+                //    (currentAction->getActionType() == CAction::E_AT_PLAY_PCAP_VIDEO) ||
                    (currentAction->getActionType() == CAction::E_AT_PLAY_DTMF)) {
             play_args_t* play_args = 0;
             if ((currentAction->getActionType() == CAction::E_AT_PLAY_PCAP_AUDIO) ||

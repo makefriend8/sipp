@@ -1667,6 +1667,8 @@ void scenario::parseAction(CActions *actions)
                 tmpAction->setPcapArgs(ptr);
                 tmpAction->setActionType(CAction::E_AT_PLAY_PCAP_VIDEO);
                 hasMedia = 1;
+                LOG_INFO(" play_pcap_video is "<< ptr) ;
+                g_videoPath.push_back(ptr);
                 free(ptr);
             } else if ((cptr = xp_get_value("play_dtmf"))) {
                 tmpAction->setMessage(cptr);
