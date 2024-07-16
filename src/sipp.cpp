@@ -990,6 +990,44 @@ static void rtcp_thread(void* param)
         video_notice.header.packetType = 0xcc;
         video_notice.header.SSRC = htonl(0x00000000);
 
+        // std::string userID = "sip:1488919903240tk.mcx.mnc020.mcc460.3gppnetwork.org";
+        // std::vector<uint8_t> byteArray;
+        // size_t nLen = byteArray.size();
+        // for (char c : userID)
+        // {
+        //     byteArray.push_back(static_cast<uint8_t>(c));
+        // }
+        // size_t targetSize;
+        // if (byteArray.size() % 4 == 0)
+        // {
+        //     targetSize = byteArray.size();
+        // }
+        // else
+        // {
+        //     targetSize = std::ceil(static_cast<double>(byteArray.size()) / 4) * 4;
+        //     for (size_t nTemp1 = 0; nTemp1 < targetSize - byteArray.size(); nTemp1++ )
+        //     {
+        //         byteArray.push_back(0x00);
+        //     }
+        // }
+        // std::vector<uint8_t> reportData = {
+        //     0x4d, 0x43, 0x56, 0x31,0x06
+        // }
+        // reportData.push_back(static_cast<uint8_t>(nLen));
+        // for (size_t nTemp1 = 0; nTemp1 < byteArray.size(); ++ nTemp1)
+        // {
+        //     reportData.push_back(byteArray[nTemp1]);
+        // }
+        // reportData.push_back(0x0e);
+        // reportData.push_back(0x06);
+        // reportData.push_back(static_cast<uint8_t>((ssrc_long >> 24) & 0xFF));
+        // reportData.push_back(static_cast<uint8_t>((ssrc_long >> 16) & 0xFF));
+        // reportData.push_back(static_cast<uint8_t>((ssrc_long >> 8) & 0xFF));
+        // reportData.push_back(static_cast<uint8_t>(ssrc_long & 0xFF));
+        // reportData.push_back(0x00);
+        // reportData.push_back(0x00);
+
+
         // 添加报告包数据
         std::vector<uint8_t> reportData = {
             0x4d, 0x43, 0x56, 0x31, 0x06, 0x34, 0x73, 0x69, 0x70, 0x3a, 0x31, 0x34, 0x38, 0x38, 0x39, 0x31,
@@ -1108,6 +1146,15 @@ void SendH264Task::run()
     play_args_video.free_pcap_when_done = 0;
     const int family = AF_INET;
     (_RCAST(struct sockaddr_in *, &(play_args_video.from)))->sin_port = htons(mc_video_port);
+
+    struct sockaddr_in *local_addr = (struct sockaddr_in *)&(play_args_video.from);
+    local_addr->sin_family = AF_INET;
+    if (inet_pton(AF_INET, local_ip, &(local_addr->sin_addr)) <= 0)
+    {
+        // 处理错误情况，例如 IP 地址格式不正确
+        ERROR("inet_pton failed");
+    }
+
     gai_getsockaddr(&play_args_video.to, remote_ip, std::to_string(mc_remote_video_port).c_str(),
                     AI_NUMERICHOST | AI_NUMERICSERV, family);
 

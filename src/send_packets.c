@@ -213,13 +213,13 @@ void send_h264_packets(play_args_t* play_args, int sock)
         /* modify UDP ports */
         udp->uh_sport = htons(port_diff + ntohs(*from_port));
         udp->uh_dport = htons(port_diff + ntohs(*to_port));
-        if (!media_ip_is_ipv6) {
+     //   if (!media_ip_is_ipv6) {
             temp_sum = checksum_carry(
                     pkt_index->partial_check +
                     check((uint16_t *) &(((struct sockaddr_in *)(void *) from)->sin_addr.s_addr), 4) +
                     check((uint16_t *) &(((struct sockaddr_in *)(void *) to)->sin_addr.s_addr), 4) +
                     check((uint16_t *) &udp->uh_sport, 4));
-        } 
+    //    } 
 #if !defined(_HPUX_LI) && defined(__HPUX)
         udp->uh_sum = (temp_sum>>16)+((temp_sum & 0xffff)<<16);
 #else
