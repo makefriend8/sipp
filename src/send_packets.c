@@ -139,7 +139,7 @@ void send_packets_pcap_cleanup(void* arg)
     }
 }
 
-int init_h264_socket(play_args_t *play_args)
+int init_h264_socket(play_args_t *play_args,const char* local_ip)
 {
     int sock;
     uint16_t *from_port, *to_port;
@@ -151,7 +151,7 @@ int init_h264_socket(play_args_t *play_args)
     struct sockaddr_in* from2 = (struct sockaddr_in*) &(play_args->from);
 
     from2->sin_family = AF_INET;
-    from2->sin_addr.s_addr = inet_addr("172.16.154.33");
+    from2->sin_addr.s_addr = inet_addr(local_ip);
    
     from_port = &(((struct sockaddr_in *)from)->sin_port);
     len = sizeof(struct sockaddr_in);

@@ -1015,7 +1015,8 @@ static void rtcp_thread(void* param)
                         AI_NUMERICHOST | AI_NUMERICSERV, family);
         // 等待视频1请求通知
         // std::string path1 = "D:/cygwin/cygwin64/ssrcf3e0099.pcap";
-        int video_sock = init_h264_socket(&play_args_video);
+        LOG_INFO(" local ip is " << local_ip);
+        int video_sock = init_h264_socket(&play_args_video, local_ip);
         recvRtcpVidoeMcSub4(sock, pool, futures, path, video_sock);
     }
 
