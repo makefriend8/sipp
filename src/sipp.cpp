@@ -908,6 +908,7 @@ static void rtcp_thread(void* param)
         LOG_INFO(" mc_rtcp_port is zero ");
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
+    LOG_INFO(" mc_rtcp_port is  "<< mc_rtcp_port) ;
     struct sockaddr_storage media_sockaddr = {0,};
     struct addrinfo* local_addr;
     struct addrinfo hints = {0,};
@@ -981,64 +982,90 @@ static void rtcp_thread(void* param)
     std::this_thread::sleep_for(std::chrono::milliseconds(3000));
     for (size_t i = 0; i < g_videoPath.size(); ++i)
     {
-        std::string path = g_videoPath[i];
-        std::string ssrc = path.substr(path.find_last_of("_") + 1, path.find_last_of(".") - path.find_last_of("_") - 1);
+        std::string vpath = g_videoPath[i];
+        size_t lastSlashPos = vpath.rfind('/');
+        size_t underscorePos = vpath.find('_', lastSlashPos);
+        if (underscorePos == std::string::npos)
+        {
+             LOG_INFO("no _");
+            continue;
+        }
+        size_t dotPos = vpath.find('.', underscorePos);
+        if (dotPos == std::string::npos)
+        {
+            LOG_INFO("no .");
+            continue;
+        }
+        std::string ssrc = vpath.substr(underscorePos + 1, dotPos - underscorePos - 1);
+       // LOG_INFO("vpath is 4444 ssrc is  " << ssrc.c_str() << " underscorePos " << underscorePos << " dotPos " << dotPos  << " lastSlashPos " << lastSlashPos);
+        //std::string ssrc = path.substr(path.find_last_of("_") + 1, path.find_last_of(".") - path.find_last_of("_") - 1);
         unsigned long ssrc_long = std::stoul(ssrc, nullptr, 16);
-
+       // LOG_INFO("vpath is 3333333  ");
         RTCPVideoMC video_notice;
         video_notice.header.version_padding_sourceCount = 0x86;
         video_notice.header.packetType = 0xcc;
         video_notice.header.SSRC = htonl(0x00000000);
-
-        // std::string userID = "sip:1488919903240tk.mcx.mnc020.mcc460.3gppnetwork.org";
-        // std::vector<uint8_t> byteArray;
-        // size_t nLen = byteArray.size();
-        // for (char c : userID)
-        // {
-        //     byteArray.push_back(static_cast<uint8_t>(c));
+        std::string userID = vpath.substr(0, vpath.find('/'));
+        std::string path = vpath.substr(vpath.find('/') + 1);
+        //std::string userID = "sip:14889199032@tk.mcx.mnc020.mcc460.3gppnetwork.org";
+        std::vector<uint8_t> byteArray;
+        for (char c : userID)
+        {
+            byteArray.push_back(static_cast<uint8_t>(c));
+        }
+        size_t nLen = byteArray.size();
+        LOG_INFO("nLen is 1111111111111111111111  "<< nLen << " ssrc is  "<< ssrc.c_str() << " path is " << path.c_str() << " userID is " << userID.c_str() << " bytearray size is " << byteArray.size());
+        // for (uint8_t byte : byteArray) {
+        //      LOG_INFO( std::hex  << static_cast<int>(byte) << " ");
         // }
-        // size_t targetSize;
-        // if (byteArray.size() % 4 == 0)
-        // {
-        //     targetSize = byteArray.size();
-        // }
-        // else
-        // {
-        //     targetSize = std::ceil(static_cast<double>(byteArray.size()) / 4) * 4;
-        //     for (size_t nTemp1 = 0; nTemp1 < targetSize - byteArray.size(); nTemp1++ )
-        //     {
-        //         byteArray.push_back(0x00);
-        //     }
-        // }
-        // std::vector<uint8_t> reportData = {
-        //     0x4d, 0x43, 0x56, 0x31,0x06
-        // }
-        // reportData.push_back(static_cast<uint8_t>(nLen));
-        // for (size_t nTemp1 = 0; nTemp1 < byteArray.size(); ++ nTemp1)
-        // {
-        //     reportData.push_back(byteArray[nTemp1]);
-        // }
-        // reportData.push_back(0x0e);
-        // reportData.push_back(0x06);
-        // reportData.push_back(static_cast<uint8_t>((ssrc_long >> 24) & 0xFF));
-        // reportData.push_back(static_cast<uint8_t>((ssrc_long >> 16) & 0xFF));
-        // reportData.push_back(static_cast<uint8_t>((ssrc_long >> 8) & 0xFF));
-        // reportData.push_back(static_cast<uint8_t>(ssrc_long & 0xFF));
-        // reportData.push_back(0x00);
-        // reportData.push_back(0x00);
+        //  LOG_INFO("nLen is 22222222222222222222222222  "<< nLen);
+        size_t targetSize;
+        if (byteArray.size() % 8 == 0)
+        {
+            targetSize = byteArray.size();
+        }
+        else
+        {
+            targetSize = std::ceil(static_cast<double>(byteArray.size()) / 8) * 8;
+            for (size_t nTemp1 = 0; nTemp1 < targetSize - byteArray.size(); nTemp1++ )
+            {
+                byteArray.push_back(0x00);
+            }
+        }
+        std::vector<uint8_t> reportData = {
+            0x4d, 0x43, 0x56, 0x31,0x06
+        };
+        reportData.push_back(static_cast<uint8_t>(nLen));
+        for (size_t nTemp1 = 0; nTemp1 < byteArray.size(); ++nTemp1)
+        {
+            reportData.push_back(byteArray[nTemp1]);
+        }
+        reportData.push_back(0x0e);
+        reportData.push_back(0x06);
+        reportData.push_back(static_cast<uint8_t>((ssrc_long >> 24) & 0xFF));
+        reportData.push_back(static_cast<uint8_t>((ssrc_long >> 16) & 0xFF));
+        reportData.push_back(static_cast<uint8_t>((ssrc_long >> 8) & 0xFF));
+        reportData.push_back(static_cast<uint8_t>(ssrc_long & 0xFF));
+        reportData.push_back(0x00);
+        reportData.push_back(0x00);
+        LOG_INFO("reportData size is   "<< reportData.size() );
 
 
         // 添加报告包数据
-        std::vector<uint8_t> reportData = {
-            0x4d, 0x43, 0x56, 0x31, 0x06, 0x34, 0x73, 0x69, 0x70, 0x3a, 0x31, 0x34, 0x38, 0x38, 0x39, 0x31,
-            0x39, 0x39, 0x30, 0x33, 0x32, 0x40, 0x74, 0x6b, 0x2e, 0x6d, 0x63, 0x78, 0x2e, 0x6d, 0x6e, 0x63,
-            0x30, 0x32, 0x30, 0x2e, 0x6d, 0x63, 0x63, 0x34, 0x36, 0x30, 0x2e, 0x33, 0x67, 0x70, 0x70, 0x6e,
-            0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x2e, 0x6f, 0x72, 0x67, 0x00, 0x00, 0x0e, 0x06, 0x0f, 0x3e,
-            0x00, 0x99, 0x00, 0x00};
-        reportData[reportData.size() - 6] = static_cast<uint8_t>((ssrc_long >> 24) & 0xFF);
-        reportData[reportData.size() - 5] = static_cast<uint8_t>((ssrc_long >> 16) & 0xFF);
-        reportData[reportData.size() - 4] = static_cast<uint8_t>((ssrc_long >> 8) & 0xFF);
-        reportData[reportData.size() - 3] = static_cast<uint8_t>(ssrc_long & 0xFF);
+        // std::vector<uint8_t> reportData = {
+        //     0x4d, 0x43, 0x56, 0x31, 0x06, 0x34, 0x73, 0x69, 0x70, 0x3a, 0x31, 0x34, 0x38, 0x38, 0x39, 0x31,
+        //     0x39, 0x39, 0x30, 0x33, 0x32, 0x40, 0x74, 0x6b, 0x2e, 0x6d, 0x63, 0x78, 0x2e, 0x6d, 0x6e, 0x63,
+        //     0x30, 0x32, 0x30, 0x2e, 0x6d, 0x63, 0x63, 0x34, 0x36, 0x30, 0x2e, 0x33, 0x67, 0x70, 0x70, 0x6e,
+        //     0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x2e, 0x6f, 0x72, 0x67, 0x00, 0x00, 0x0e, 0x06, 0x0f, 0x3e,
+        //     0x00, 0x99, 0x00, 0x00};
+        // reportData[reportData.size() - 6] = static_cast<uint8_t>((ssrc_long >> 24) & 0xFF);
+        // reportData[reportData.size() - 5] = static_cast<uint8_t>((ssrc_long >> 16) & 0xFF);
+        // reportData[reportData.size() - 4] = static_cast<uint8_t>((ssrc_long >> 8) & 0xFF);
+        // reportData[reportData.size() - 3] = static_cast<uint8_t>(ssrc_long & 0xFF);
+        // 输出每个元素的十六进制值
+        //   for (uint8_t byte : reportData) {
+        //        LOG_INFO( std::hex  << static_cast<int>(byte) << " ");
+        //   }
 
         video_notice.reportData = reportData;
         video_notice.header.length = htons((sizeof(RTCPVideoHeader) + video_notice.reportData.size()) / 4 - 1);
@@ -1171,9 +1198,11 @@ void SendH264Task::run()
         ERROR("Cannot read file %s", M_pcapArgs->file);
     }
     play_args_video.pcap = M_pcapArgs;
-    LOG_INFO( "begin to send h264 ") ;
+    std::time_t currentTime1 = std::time(nullptr);
+     LOG_INFO( "begin to send h264 " << currentTime1) ;
     send_h264_packets(&play_args_video, m_video_sock);
-     LOG_INFO( "end to send h264 ") ;
+    std::time_t currentTime2 = std::time(nullptr);
+     LOG_INFO( "end to send h264 " << currentTime2) ;
 }
 
 static void rtp_video_recv_thread(void* param)

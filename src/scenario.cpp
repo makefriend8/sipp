@@ -1664,7 +1664,7 @@ void scenario::parseAction(CActions *actions)
                 hasMedia = 1;
                 free(ptr);
             } else if ((ptr = xp_get_keyword_value("play_pcap_video"))) {
-                tmpAction->setPcapArgs(ptr);
+                //tmpAction->setPcapArgs(ptr);
                 tmpAction->setActionType(CAction::E_AT_PLAY_PCAP_VIDEO);
                 hasMedia = 1;
                 LOG_INFO(" play_pcap_video is "<< ptr) ;
