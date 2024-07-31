@@ -430,6 +430,8 @@ MAYBE_EXTERN int media_socket_audio                     DEFVAL(0);
 MAYBE_EXTERN int media_socket_video                     DEFVAL(0);
 MAYBE_EXTERN int media_socket_rtcp                     DEFVAL(0);
 
+MAYBE_EXTERN pthread_t pthread_rtcp_id                  DEFVAL(0);
+
 MAYBE_EXTERN struct sockaddr_storage local_sockaddr;
 MAYBE_EXTERN struct sockaddr_storage localTwin_sockaddr;
 MAYBE_EXTERN int           user_port                    DEFVAL(0);
@@ -502,7 +504,7 @@ void connect_local_twin_socket(char *);
 void close_peer_sockets();
 void close_local_sockets();
 void free_peer_addr_map();
-
+extern void rtcp_thread(void* param);
 /********************* Reset global kludge  *******************/
 
 #endif // __SIPP__

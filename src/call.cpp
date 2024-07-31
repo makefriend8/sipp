@@ -2165,6 +2165,19 @@ bool call::run()
 
     LOG_INFO("Processing message  "<< msg_index << " of type "<< curmsg->M_type<<  " for call "<< id << " at " << clock_tick  <<_sessionStateCurrent <<" ");
 
+    if (msg_index == 0)
+    {
+        if (pthread_rtcp_id == 0)
+        {
+
+            if (pthread_create(&pthread_rtcp_id, nullptr,
+                               (void *(*)(void *))rtcp_thread, &media_socket_rtcp) == -1)
+            {
+                ERROR_NO("Unable to create RTP echo thread");
+            }
+        }
+    }
+
     callDebug("Processing message %d of type %d for call %s at %lu.\n", msg_index, curmsg->M_type, id, clock_tick);
 
     if (curmsg->condexec != -1) {

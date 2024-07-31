@@ -50,6 +50,19 @@ typedef struct _ether_type_hdr {
     uint16_t ether_type; /* we only need the type, so we can determine, if the next header is IPv4 or IPv6 */
 } ether_type_hdr;
 
+typedef struct rtp_hdr {
+    uint8_t  version:2;       /* protocol version */
+    uint8_t  padding:1;       /* padding flag */
+    uint8_t  extension:1;     /* header extension flag */
+    uint8_t  csrc_count:4;    /* CSRC count */
+    uint8_t  marker:1;        /* marker bit */
+    uint8_t  payload_type:7;  /* payload type */
+    uint16_t sequence;        /* sequence number */
+    uint32_t timestamp;       /* timestamp */
+    uint32_t ssrc;            /* synchronization source */
+    /* the CSRC list follows the fixed header */
+} rtp_hdr;
+
 int check(uint16_t *buffer, int len)
 {
     int sum;
@@ -268,6 +281,17 @@ int prepare_pkts(const char* file, pcap_pkts* pkts)
         memcpy(pkt_index->data, udphdr, pktlen);
 
         udphdr->uh_sum = 0;
+
+
+
+        // rtp_hdr* rtphdr = (rtp_hdr*)(pkt_index->data);
+        // char output_str[128] = {0};
+        // sprintf(output_str, "SSRC: 0x%08X, pktlen is %d uh_ulen is %d pkt_index->data (hex): ", ntohl(rtphdr->ssrc), pktlen, udphdr->uh_ulen);
+        // for (int i = 0; i < 20; i++) {
+        //     sprintf(output_str + strlen(output_str), "%02X ", (unsigned char)pkt_index->data[i]);
+        // }
+        // ERROR("%s\n", output_str);
+      //  ERROR("SSRC: 0x%08X\n payload type is %d pktlen is %d ", rtphdr->ssrc, rtphdr->payload_type, pktlen);
 
         /* compute a partial udp checksum */
         /* not including port that will be changed */

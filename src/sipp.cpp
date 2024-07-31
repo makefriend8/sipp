@@ -780,6 +780,7 @@ static int recvRtcpVidoeMcSub7(int sock)
 
 static int recvRtcpVidoeMcSub4(int sock, ThreadPool &pool, std::vector<std::future<void>> &futures, std::string path, int video_sock)
 {
+     LOG_INFO("recvRtcpVidoeMcSub4");
 
     if (sock < 0)
     {
@@ -818,6 +819,7 @@ static int recvRtcpVidoeMcSub4(int sock, ThreadPool &pool, std::vector<std::futu
     return 1;
     }
     struct sockaddr_storage remote_addr_storage;
+    int ssrcRecv[4];
     while (1)
     {
 
@@ -857,7 +859,26 @@ static int recvRtcpVidoeMcSub4(int sock, ThreadPool &pool, std::vector<std::futu
         }
         if (header->packetType == 204)
         {
+            //必须是请求才结束循环，否则还是忽略
             LOG_INFO(" receive mc video request");
+            if (msg[8] == 0x4d && msg[9] == 0x43 && msg[10] == 0x56 && msg[11] == 0x30)
+            {
+                int userIDLen = static_cast<int>(msg[13]);
+                LOG_INFO(" receive video request mcv0 userid len "<< userIDLen);
+                int nRealLen = std::ceil(static_cast<double>(userIDLen + 2) / 4) * 4;
+                for (int nT1 = 0; nT1 < 4; nT1++)
+                {
+                    ssrcRecv[nT1] = msg[12 + nRealLen + 2 + nT1];
+                    LOG_INFO( "0x" << std::hex << static_cast<int>(ssrcRecv[nT1]) << " ");
+                }
+
+            }
+            else
+            {
+                LOG_INFO(" not mcv0 ");
+                continue;
+            }
+            LOG_INFO(" 2222222222 mc video request");
             break;
         }
         //  RTCPVideoMC report;
@@ -881,6 +902,10 @@ static int recvRtcpVidoeMcSub4(int sock, ThreadPool &pool, std::vector<std::futu
         0x4d, 0x43, 0x56, 0x31, 0x0f, 0x02, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00,
         0x0e, 0x06, 0x0f, 0x3e, 0x00, 0x99, 0x00, 0x00, 0x0d, 0x02, 0x00, 0x80
     };
+    for (int i = 14; i < 18; ++i)
+    {
+        reportData[i]=ssrcRecv[i-14];
+    }
     responseVideo.reportData = reportData;
     responseVideo.header.length = htons((sizeof(RTCPVideoHeader) + responseVideo.reportData.size()) / 4 - 1);
     //发送同意视频请求命令
@@ -894,7 +919,9 @@ static int recvRtcpVidoeMcSub4(int sock, ThreadPool &pool, std::vector<std::futu
 
 #endif
 
-static void rtcp_thread(void* param)
+//int g_change = 1;
+
+void rtcp_thread(void* param)
 {
     LOG_INFO(" start rtcp_thread") ;
     while (mc_remote_rtcp_port == 0)
@@ -943,6 +970,7 @@ static void rtcp_thread(void* param)
 
 
     int sock = *(int *)param;
+    sock = media_socket_rtcp;
     //sipp_socklen_t len;
     struct sockaddr_storage remote_rtcp_addr;
 
@@ -979,7 +1007,8 @@ static void rtcp_thread(void* param)
 #ifdef SIP_SERVER
     // 构建 RTCP 报告包
     // 启动后1秒发送rtcp通知， 目前使用172.16.10.148的第一个视频通知和第二个视频通知
-    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+   // std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+    int video_sock = 0;
     for (size_t i = 0; i < g_videoPath.size(); ++i)
     {
         std::string vpath = g_videoPath[i];
@@ -1000,6 +1029,8 @@ static void rtcp_thread(void* param)
        // LOG_INFO("vpath is 4444 ssrc is  " << ssrc.c_str() << " underscorePos " << underscorePos << " dotPos " << dotPos  << " lastSlashPos " << lastSlashPos);
         //std::string ssrc = path.substr(path.find_last_of("_") + 1, path.find_last_of(".") - path.find_last_of("_") - 1);
         unsigned long ssrc_long = std::stoul(ssrc, nullptr, 16);
+       // g_change ++;
+        //ssrc_long += g_change;
        // LOG_INFO("vpath is 3333333  ");
         RTCPVideoMC video_notice;
         video_notice.header.version_padding_sourceCount = 0x86;
@@ -1081,7 +1112,12 @@ static void rtcp_thread(void* param)
         // 等待视频1请求通知
         // std::string path1 = "D:/cygwin/cygwin64/ssrcf3e0099.pcap";
         LOG_INFO(" local ip is " << local_ip);
-        int video_sock = init_h264_socket(&play_args_video, local_ip);
+        if (video_sock == 0)
+        {
+            LOG_INFO(" 00000  video_sock  is " << video_sock);
+            video_sock = init_h264_socket(&play_args_video, local_ip);
+        }
+        LOG_INFO(" video_sock  is " << video_sock);
         recvRtcpVidoeMcSub4(sock, pool, futures, path, video_sock);
     }
 
@@ -1153,7 +1189,9 @@ static void rtcp_thread(void* param)
         future.get();
     }
     close(sock);
- 
+    close(video_sock);
+    LOG_INFO(" end rtcp_thread") ;
+    pthread_rtcp_id = 0;
 }
 
 void SendH264Task::run()
@@ -1203,6 +1241,8 @@ void SendH264Task::run()
     send_h264_packets(&play_args_video, m_video_sock);
     std::time_t currentTime2 = std::time(nullptr);
      LOG_INFO( "end to send h264 " << currentTime2) ;
+     //发送传输结束消息
+
 }
 
 static void rtp_video_recv_thread(void* param)
@@ -2053,7 +2093,7 @@ int main(int argc, char *argv[])
 {
     int                  argi = 0;
     pthread_t pthread2_id = 0, pthread3_id = 0;
-    pthread_t pthread_rtcp_id = 0;
+    //pthread_t pthread_rtcp_id = 0;
     bool                 slave_masterSet = false;
     int rtp_errors;
     int echo_errors;
@@ -2888,10 +2928,10 @@ int main(int argc, char *argv[])
             ERROR_NO("Unable to create video RTP echo thread");
         }
     }
-    if (pthread_create(&pthread_rtcp_id, nullptr,
-                (void *(*)(void *))rtcp_thread, &media_socket_rtcp) == -1) {
-            ERROR_NO("Unable to create RTP echo thread");
-        }
+    // if (pthread_create(&pthread_rtcp_id, nullptr,
+    //             (void *(*)(void *))rtcp_thread, &media_socket_rtcp) == -1) {
+    //         ERROR_NO("Unable to create RTP echo thread");
+    //     }
     
 
     traffic_thread(rtp_errors, echo_errors);
@@ -2904,10 +2944,10 @@ int main(int argc, char *argv[])
     if (pthread3_id) {
         pthread_join(pthread3_id, nullptr);
     }
-    if (pthread_rtcp_id)
-    {
-         pthread_join(pthread_rtcp_id, nullptr);
-    }
+    // if (pthread_rtcp_id)
+    // {
+    //      pthread_join(pthread_rtcp_id, nullptr);
+    // }
 
 #ifdef HAVE_EPOLL
     close(epollfd);
